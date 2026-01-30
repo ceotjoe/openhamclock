@@ -789,26 +789,36 @@
         const map = L.map(mapRef.current, {
           center: [20, 0],
           zoom: 2,
-          minZoom: 1,
+          minZoom: 2,
           maxZoom: 18,
-          worldCopyJump: true,
-          zoomControl: true
+          worldCopyJump: false,
+          zoomControl: true,
+          maxBounds: [[-85, -180], [85, 180]],
+          maxBoundsViscosity: 1.0
         });
 
         // Initial tile layer
         tileLayerRef.current = L.tileLayer(MAP_STYLES[mapStyle].url, {
           attribution: MAP_STYLES[mapStyle].attribution,
-          noWrap: false
+          noWrap: true
         }).addTo(map);
 
-        // Day/night terminator
+        // Day/night terminator with resolution option for smoother rendering
         terminatorRef.current = L.terminator({
-          fillOpacity: 0.4,
-          fillColor: '#000010',
+          resolution: 2,
+          fillOpacity: 0.35,
+          fillColor: '#000020',
           color: '#ffaa00',
           weight: 2,
           dashArray: '5, 5'
         }).addTo(map);
+
+        // Refresh terminator after a short delay to ensure proper rendering
+        setTimeout(() => {
+          if (terminatorRef.current) {
+            terminatorRef.current.setTime();
+          }
+        }, 100);
 
         // Update terminator every minute
         setInterval(() => {
@@ -839,7 +849,7 @@
         mapInstanceRef.current.removeLayer(tileLayerRef.current);
         tileLayerRef.current = L.tileLayer(MAP_STYLES[mapStyle].url, {
           attribution: MAP_STYLES[mapStyle].attribution,
-          noWrap: false
+          noWrap: true
         }).addTo(mapInstanceRef.current);
         
         // Ensure terminator is on top

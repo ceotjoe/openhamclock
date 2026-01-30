@@ -84,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CORS issues with external APIs now handled by server proxy
 - Map projection accuracy improved
 
-## [2.0.0] - 2026-01-29
+## [2.0.0] - 2024-01-29
 
 ### Added
 - Live API integrations for NOAA space weather
@@ -99,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved space weather display with color coding
 - Better visual hierarchy in panels
 
-## [1.0.0] - 2026-01-29
+## [1.0.0] - 2024-01-29
 
 ### Added
 - Initial release
@@ -130,8 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | 3.2.0 | 2026-01-30 | Theme system (dark/light/legacy) |
 | 3.1.0 | 2026-01-30 | User settings, DX cluster fixes |
 | 3.0.0 | 2026-01-30 | Real maps, Electron, Docker, Railway |
-| 2.0.0 | 2026-01-29 | Live APIs, improved map |
-| 1.0.0 | 2026-01-29 | Initial release |
+| 2.0.0 | 2024-01-29 | Live APIs, improved map |
+| 1.0.0 | 2024-01-29 | Initial release |
 
 ---
 
