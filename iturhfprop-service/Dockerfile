@@ -21,12 +21,13 @@ RUN curl -L -o ITURHFProp "https://github.com/ITU-R-Study-Group-3/ITU-R-HF/relea
     && curl -L -o libp372.so "https://github.com/ITU-R-Study-Group-3/ITU-R-HF/releases/download/v14.3/libp372.so" \
     && chmod +x ITURHFProp
 
-# Download source to get Data files
+# Download source to get Data files - use wildcard to handle directory naming
 RUN curl -L -o source.tar.gz "https://github.com/ITU-R-Study-Group-3/ITU-R-HF/archive/refs/tags/v14.3.tar.gz" \
     && tar -xzf source.tar.gz \
-    && mv ITU-R-HF-14.3/Data . \
-    && mv ITU-R-HF-14.3/IonMap . \
-    && rm -rf ITU-R-HF-14.3 source.tar.gz
+    && ls -la \
+    && mv ITU-R-HF-*/Data . \
+    && mv ITU-R-HF-*/IonMap . \
+    && rm -rf ITU-R-HF-* source.tar.gz
 
 # Set library path so ITURHFProp can find shared libs
 ENV LD_LIBRARY_PATH=/opt/iturhfprop:$LD_LIBRARY_PATH
