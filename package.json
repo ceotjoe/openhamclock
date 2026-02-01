@@ -1,6 +1,6 @@
 {
   "name": "openhamclock",
-  "version": "3.8.0",
+  "version": "3.9.0",
   "description": "Open-source amateur radio dashboard with real-time space weather, band conditions, DX cluster, and interactive world map",
   "main": "server.js",
   "scripts": {

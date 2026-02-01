@@ -12,6 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebSocket DX cluster connection
 - Azimuthal equidistant projection option
 
+## [3.9.0] - 2026-02-01
+
+### Added
+- **Hybrid Propagation System** - Best-of-both-worlds HF prediction
+  - Combines ITURHFProp (ITU-R P.533-14) base predictions with real-time ionosonde corrections
+  - Automatic fallback to built-in calculations when ITURHFProp unavailable
+  - Configurable via `ITURHFPROP_URL` environment variable
+- **ITURHFProp Service** - Deployable microservice for ITU-R P.533-14 predictions
+  - REST API wrapper around ITURHFProp engine
+  - Docker/Railway deployable
+  - Endpoints: `/api/predict`, `/api/predict/hourly`, `/api/bands`, `/api/health`
+- **Ionospheric Correction Factor** - Adjusts model predictions based on actual conditions
+  - Compares expected foF2 (from model) vs actual foF2 (from ionosonde)
+  - Applies geomagnetic (K-index) penalties
+  - Reports correction confidence (high/medium/low)
+
+### Changed
+- Propagation API now reports hybrid mode status
+- Response includes `model` field indicating prediction source
+- Added `hybrid` object to propagation response with correction details
+
+### Technical
+- New functions: `fetchITURHFPropPrediction()`, `applyHybridCorrection()`, `calculateIonoCorrection()`
+- 5-minute cache for ITURHFProp predictions
+- Graceful degradation when services unavailable
+
 ## [3.8.0] - 2026-01-31
 
 ### Added
@@ -206,6 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 3.9.0 | 2026-02-01 | Hybrid propagation (ITURHFProp + ionosonde) |
 | 3.8.0 | 2026-01-31 | DX paths on map, hover highlights, moon tracking |
 | 3.7.0 | 2026-01-31 | DX Spider proxy, spotter locations, map toggles |
 | 3.6.0 | 2026-01-31 | Real-time ionosonde data, ITU-R P.533 propagation |

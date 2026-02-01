@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![OpenHamClock Banner](https://img.shields.io/badge/OpenHamClock-v3.8.0-orange?style=for-the-badge)
+![OpenHamClock Banner](https://img.shields.io/badge/OpenHamClock-v3.9.0-orange?style=for-the-badge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-brightgreen?style=for-the-badge&logo=node.js)](https://nodejs.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge)](CONTRIBUTING.md)
@@ -47,8 +47,11 @@ OpenHamClock is a spiritual successor to the beloved HamClock application create
 - **Zoom and pan** with full interactivity
 
 ### 📡 Propagation Prediction
+- **Hybrid ITU-R P.533-14** - Combines professional model with real-time data
+  - ITURHFProp engine provides base P.533-14 predictions
+  - KC2G/GIRO ionosonde network provides real-time corrections
+  - Automatic fallback when services unavailable
 - **Real-time ionosonde data** from KC2G/GIRO network (~100 stations)
-- **ITU-R P.533-based** MUF/LUF calculations
 - **Visual heat map** showing band conditions to DX
 - **24-hour propagation chart** with hourly predictions
 - **Solar flux, K-index, and sunspot** integration
@@ -168,11 +171,39 @@ docker compose up -d
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/openhamclock)
 
-Or manually:
-1. Fork this repository
-2. Create a new project on [Railway](https://railway.app)
-3. Connect your GitHub repository
-4. Deploy!
+#### Full Deployment (3 Services)
+
+For the complete hybrid propagation system, deploy all three services:
+
+**1. Main OpenHamClock Service**
+```bash
+# From repository root
+railway init
+railway up
+```
+
+**2. DX Spider Proxy** (optional - enables live DX cluster paths)
+```bash
+cd dxspider-proxy
+railway init
+railway up
+# Note the URL, e.g., https://dxspider-proxy-xxxx.railway.app
+```
+
+**3. ITURHFProp Service** (optional - enables hybrid propagation)
+```bash
+cd iturhfprop-service
+railway init
+railway up
+# Note the URL, e.g., https://iturhfprop-xxxx.railway.app
+```
+
+**4. Link Services**
+
+In the main OpenHamClock service, add environment variable:
+```
+ITURHFPROP_URL=https://your-iturhfprop-service.railway.app
+```
 
 ---
 
@@ -195,6 +226,7 @@ const CONFIG = {
 |----------|---------|-------------|
 | `PORT` | `3000` | Server port |
 | `NODE_ENV` | `development` | Environment mode |
+| `ITURHFPROP_URL` | `null` | ITURHFProp service URL (enables hybrid mode) |
 
 ---
 
@@ -232,22 +264,26 @@ npm run electron
 
 ```
 openhamclock/
-├── public/           # Static web files
-│   ├── index.html    # Main application
-│   └── icons/        # App icons
-├── electron/         # Electron main process
-│   └── main.js       # Desktop app entry
-├── dxspider-proxy/   # DX Cluster proxy service
-│   ├── server.js     # Telnet-to-WebSocket proxy
-│   ├── package.json  # Proxy dependencies
-│   └── README.md     # Proxy documentation
-├── scripts/          # Setup scripts
-│   ├── setup-pi.sh   # Raspberry Pi setup
+├── public/             # Static web files
+│   ├── index.html      # Main application
+│   └── icons/          # App icons
+├── electron/           # Electron main process
+│   └── main.js         # Desktop app entry
+├── dxspider-proxy/     # DX Cluster proxy service
+│   ├── server.js       # Telnet-to-WebSocket proxy
+│   ├── package.json    # Proxy dependencies
+│   └── README.md       # Proxy documentation
+├── iturhfprop-service/ # HF Propagation prediction service
+│   ├── server.js       # ITU-R P.533 API wrapper
+│   ├── Dockerfile      # Builds ITURHFProp engine
+│   └── README.md       # Service documentation
+├── scripts/            # Setup scripts
+│   ├── setup-pi.sh     # Raspberry Pi setup
 │   ├── setup-linux.sh
 │   └── setup-windows.ps1
-├── server.js         # Express server & API proxy
-├── Dockerfile        # Container build
-├── railway.toml      # Railway config
+├── server.js           # Express server & API proxy
+├── Dockerfile          # Container build
+├── railway.toml        # Railway config
 └── package.json
 ```
 
