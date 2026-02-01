@@ -131,64 +131,49 @@ function parseOutputFile(outputPath) {
       raw: output.substring(0, 3000)  // Include raw for debugging
     };
     
-    let headers = [];
     let inDataSection = false;
     
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('-') || trimmed.startsWith('*')) {
-        continue;
-      }
       
-      // Look for CSV header line
-      if (trimmed.includes('Freq') || trimmed.includes('FREQ') || trimmed.includes('frequency')) {
-        headers = trimmed.split(/[,\t]+/).map(h => h.trim().toLowerCase());
+      // Look for "Calculated Parameters" section
+      if (trimmed.includes('Calculated Parameters') && !trimmed.includes('End')) {
         inDataSection = true;
-        console.log('[Parse] Found headers:', headers);
         continue;
       }
       
-      // Parse data lines (CSV or space-separated)
-      if (inDataSection) {
-        let parts;
-        if (trimmed.includes(',')) {
-          parts = trimmed.split(',').map(p => p.trim());
-        } else {
-          parts = trimmed.split(/\s+/);
+      // Stop at end of data
+      if (trimmed.includes('End Calculated') || trimmed.includes('*****')) {
+        if (inDataSection && results.frequencies.length > 0) {
+          break;
         }
+      }
+      
+      // Parse data lines: "02, 05,    2.000,-120.29, -16.04,   0.00"
+      // Format: Month, Hour, Freq, Pr, SNR, BCR
+      if (inDataSection && trimmed && !trimmed.startsWith('*') && !trimmed.startsWith('-')) {
+        const parts = trimmed.split(',').map(p => p.trim());
         
-        if (parts.length >= 2 && !isNaN(parseFloat(parts[0]))) {
-          const freqResult = {
-            freq: parseFloat(parts[0])
-          };
+        if (parts.length >= 6) {
+          const freq = parseFloat(parts[2]);
+          const pr = parseFloat(parts[3]);
+          const snr = parseFloat(parts[4]);
+          const bcr = parseFloat(parts[5]);
           
-          // Map based on headers or position
-          if (headers.length > 0) {
-            headers.forEach((h, i) => {
-              if (i < parts.length) {
-                const val = parseFloat(parts[i]);
-                if (!isNaN(val)) {
-                  if (h.includes('snr')) freqResult.snr = val;
-                  else if (h.includes('bcr') || h.includes('rel')) freqResult.reliability = val;
-                  else if (h.includes('pr') || h.includes('power')) freqResult.sdbw = val;
-                  else if (h.includes('muf')) freqResult.muf = val;
-                }
-              }
+          if (!isNaN(freq) && freq > 0) {
+            results.frequencies.push({
+              freq: freq,
+              sdbw: pr,
+              snr: snr,
+              reliability: bcr
             });
-          } else {
-            // Fallback positional parsing
-            if (parts.length >= 2) freqResult.reliability = parseFloat(parts[1]) || 0;
-            if (parts.length >= 3) freqResult.snr = parseFloat(parts[2]) || null;
-            if (parts.length >= 4) freqResult.sdbw = parseFloat(parts[3]) || null;
+            console.log(`[Parse] Freq ${freq} MHz: SNR=${snr} dB, BCR=${bcr}%`);
           }
-          
-          console.log('[Parse] Frequency result:', freqResult);
-          results.frequencies.push(freqResult);
         }
       }
     }
     
-    // Also look for MUF in header section
+    // Extract MUF from header section
     const mufMatch = output.match(/(?:BMUF|MUF|Operational MUF)\s*[:=]?\s*([\d.]+)/i);
     if (mufMatch) {
       results.muf = parseFloat(mufMatch[1]);
