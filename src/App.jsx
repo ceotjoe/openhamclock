@@ -52,16 +52,21 @@ const App = () => {
   const [startTime] = useState(Date.now());
   const [uptime, setUptime] = useState('0d 0h 0m');
   
-  // Load server configuration on startup
+  // Load server configuration on startup (only matters for first-time users)
   useEffect(() => {
     const initConfig = async () => {
+      // Fetch server config (provides defaults for new users without localStorage)
       await fetchServerConfig();
-      const serverConfig = loadConfig();
-      setConfig(serverConfig);
+      
+      // Load config - localStorage takes priority over server config
+      const loadedConfig = loadConfig();
+      setConfig(loadedConfig);
       setConfigLoaded(true);
       
-      // Auto-show settings if config is incomplete
-      if (serverConfig.configIncomplete || serverConfig.callsign === 'N0CALL') {
+      // Only show settings if user has no saved config AND no valid callsign
+      // This prevents the popup from appearing every refresh
+      const hasLocalStorage = localStorage.getItem('openhamclock_config');
+      if (!hasLocalStorage && loadedConfig.callsign === 'N0CALL') {
         setShowSettings(true);
       }
     };
@@ -147,15 +152,12 @@ const App = () => {
     applyTheme(config.theme || 'dark');
   }, []);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('openhamclock_config');
-    if (!saved) setShowSettings(true);
-  }, []);
-
+  // Config save handler - persists to localStorage
   const handleSaveConfig = (newConfig) => {
     setConfig(newConfig);
     saveConfig(newConfig);
     applyTheme(newConfig.theme || 'dark');
+    console.log('[Config] Saved to localStorage:', newConfig.callsign);
   };
 
   // Data hooks

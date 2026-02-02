@@ -41,26 +41,57 @@ export const fetchServerConfig = async () => {
     const response = await fetch('/api/config');
     if (response.ok) {
       serverConfig = await response.json();
-      console.log('[Config] Loaded from server:', serverConfig.callsign, '@', serverConfig.locator);
+      // Only log if server has real config (not defaults)
+      if (serverConfig.callsign && serverConfig.callsign !== 'N0CALL') {
+        console.log('[Config] Server config:', serverConfig.callsign, '@', serverConfig.locator);
+      }
       return serverConfig;
     }
   } catch (e) {
-    console.warn('[Config] Could not fetch server config, using defaults');
+    console.warn('[Config] Could not fetch server config');
   }
   return null;
 };
 
 /**
- * Load config from localStorage, merged with server config
+ * Load config - localStorage is the primary source of truth
+ * Server config only provides defaults for first-time users
  */
 export const loadConfig = () => {
+  // Start with defaults
   let config = { ...DEFAULT_CONFIG };
   
-  // First, apply server config if available
-  if (serverConfig) {
+  // Try to load from localStorage FIRST (user's saved settings)
+  let localConfig = null;
+  try {
+    const saved = localStorage.getItem('openhamclock_config');
+    if (saved) {
+      localConfig = JSON.parse(saved);
+      console.log('[Config] Loaded from localStorage:', localConfig.callsign);
+    }
+  } catch (e) {
+    console.error('Error loading config from localStorage:', e);
+  }
+  
+  // If user has localStorage config, use it (this is the priority)
+  if (localConfig) {
     config = {
       ...config,
-      callsign: serverConfig.callsign || config.callsign,
+      ...localConfig,
+      // Ensure nested objects are properly merged
+      location: localConfig.location || config.location,
+      defaultDX: localConfig.defaultDX || config.defaultDX,
+      refreshIntervals: { ...config.refreshIntervals, ...localConfig.refreshIntervals }
+    };
+  } 
+  // Only use server config if NO localStorage exists (first-time user)
+  else if (serverConfig) {
+    // Server config provides initial defaults for new users
+    // But only if they have real values (not N0CALL)
+    config = {
+      ...config,
+      callsign: (serverConfig.callsign && serverConfig.callsign !== 'N0CALL') 
+        ? serverConfig.callsign : config.callsign,
       locator: serverConfig.locator || config.locator,
       location: {
         lat: serverConfig.latitude || config.location.lat,
@@ -76,21 +107,12 @@ export const loadConfig = () => {
       use12Hour: serverConfig.timeFormat === '12',
       showSatellites: serverConfig.showSatellites ?? config.showSatellites,
       showPota: serverConfig.showPota ?? config.showPota,
-      showDxPaths: serverConfig.showDxPaths ?? config.showDxPaths,
-      configIncomplete: serverConfig.configIncomplete
+      showDxPaths: serverConfig.showDxPaths ?? config.showDxPaths
     };
   }
   
-  // Then, override with localStorage (user's local changes)
-  try {
-    const saved = localStorage.getItem('openhamclock_config');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      config = { ...config, ...parsed };
-    }
-  } catch (e) {
-    console.error('Error loading config from localStorage:', e);
-  }
+  // Mark if config needs setup (no callsign set anywhere)
+  config.configIncomplete = (config.callsign === 'N0CALL' || !config.locator);
   
   return config;
 };
@@ -101,8 +123,9 @@ export const loadConfig = () => {
 export const saveConfig = (config) => {
   try {
     localStorage.setItem('openhamclock_config', JSON.stringify(config));
+    console.log('[Config] Saved to localStorage');
   } catch (e) {
-    console.error('Error saving config:', e);
+    console.error('[Config] Error saving to localStorage:', e);
   }
 };
 
