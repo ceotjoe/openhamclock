@@ -6,6 +6,8 @@ import React, { useState } from 'react';
 
 export const DXFilterManager = ({ filters, onFilterChange, isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState('zones');
+  const [newWatchlistCall, setNewWatchlistCall] = useState('');
+  const [newExcludeCall, setNewExcludeCall] = useState('');
 
   if (!isOpen) return null;
 
@@ -92,6 +94,26 @@ export const DXFilterManager = ({ filters, onFilterChange, isOpen, onClose }) =>
     cursor: 'pointer',
     fontFamily: 'JetBrains Mono, monospace'
   });
+
+  const addToWatchlist = () => {
+    if (newWatchlistCall.trim()) {
+      const current = filters?.watchlist || [];
+      if (!current.includes(newWatchlistCall.toUpperCase())) {
+        onFilterChange({ ...filters, watchlist: [...current, newWatchlistCall.toUpperCase()] });
+      }
+      setNewWatchlistCall('');
+    }
+  };
+
+  const addToExclude = () => {
+    if (newExcludeCall.trim()) {
+      const current = filters?.excludeList || [];
+      if (!current.includes(newExcludeCall.toUpperCase())) {
+        onFilterChange({ ...filters, excludeList: [...current, newExcludeCall.toUpperCase()] });
+      }
+      setNewExcludeCall('');
+    }
+  };
 
   const renderZonesTab = () => (
     <div>
@@ -205,115 +227,91 @@ export const DXFilterManager = ({ filters, onFilterChange, isOpen, onClose }) =>
     </div>
   );
 
-  const renderWatchlistTab = () => {
-    const [newCall, setNewCall] = useState('');
-    const addToWatchlist = () => {
-      if (newCall.trim()) {
-        const current = filters?.watchlist || [];
-        if (!current.includes(newCall.toUpperCase())) {
-          onFilterChange({ ...filters, watchlist: [...current, newCall.toUpperCase()] });
-        }
-        setNewCall('');
-      }
-    };
-    return (
-      <div>
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
-            Watchlist - Highlight these callsigns
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              value={newCall}
-              onChange={(e) => setNewCall(e.target.value.toUpperCase())}
-              onKeyPress={(e) => e.key === 'Enter' && addToWatchlist()}
-              placeholder="Enter callsign..."
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                fontFamily: 'JetBrains Mono'
-              }}
-            />
-            <button onClick={addToWatchlist} style={{ padding: '8px 16px', background: 'var(--accent-cyan)', border: 'none', borderRadius: '4px', color: '#000', fontWeight: '600', cursor: 'pointer' }}>Add</button>
-          </div>
+  const renderWatchlistTab = () => (
+    <div>
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
+          Watchlist - Highlight these callsigns
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {(filters?.watchlist || []).map(call => (
-            <div key={call} style={{ ...chipStyle(true), display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {call}
-              <button onClick={() => toggleArrayItem('watchlist', call)} style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: 0, fontSize: '14px' }}>×</button>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: '16px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={filters?.watchlistOnly || false}
-              onChange={(e) => onFilterChange({ ...filters, watchlistOnly: e.target.checked || undefined })}
-            />
-            Show only watchlist callsigns
-          </label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="text"
+            value={newWatchlistCall}
+            onChange={(e) => setNewWatchlistCall(e.target.value.toUpperCase())}
+            onKeyPress={(e) => e.key === 'Enter' && addToWatchlist()}
+            placeholder="Enter callsign..."
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              color: 'var(--text-primary)',
+              fontSize: '13px',
+              fontFamily: 'JetBrains Mono'
+            }}
+          />
+          <button onClick={addToWatchlist} style={{ padding: '8px 16px', background: 'var(--accent-cyan)', border: 'none', borderRadius: '4px', color: '#000', fontWeight: '600', cursor: 'pointer' }}>Add</button>
         </div>
       </div>
-    );
-  };
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        {(filters?.watchlist || []).map(call => (
+          <div key={call} style={{ ...chipStyle(true), display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {call}
+            <button onClick={() => toggleArrayItem('watchlist', call)} style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: 0, fontSize: '14px' }}>×</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: '16px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '12px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={filters?.watchlistOnly || false}
+            onChange={(e) => onFilterChange({ ...filters, watchlistOnly: e.target.checked || undefined })}
+          />
+          Show only watchlist callsigns
+        </label>
+      </div>
+    </div>
+  );
 
-  const renderExcludeTab = () => {
-    const [newCall, setNewCall] = useState('');
-    const addToExclude = () => {
-      if (newCall.trim()) {
-        const current = filters?.excludeList || [];
-        if (!current.includes(newCall.toUpperCase())) {
-          onFilterChange({ ...filters, excludeList: [...current, newCall.toUpperCase()] });
-        }
-        setNewCall('');
-      }
-    };
-    return (
-      <div>
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
-            Exclude List - Hide these callsigns
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              value={newCall}
-              onChange={(e) => setNewCall(e.target.value.toUpperCase())}
-              onKeyPress={(e) => e.key === 'Enter' && addToExclude()}
-              placeholder="Enter callsign..."
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '4px',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                fontFamily: 'JetBrains Mono'
-              }}
-            />
-            <button onClick={addToExclude} style={{ padding: '8px 16px', background: 'var(--accent-red)', border: 'none', borderRadius: '4px', color: '#fff', fontWeight: '600', cursor: 'pointer' }}>Add</button>
-          </div>
+  const renderExcludeTab = () => (
+    <div>
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>
+          Exclude List - Hide these callsigns
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {(filters?.excludeList || []).map(call => (
-            <div key={call} style={{ ...chipStyle(false), background: 'rgba(255, 68, 68, 0.2)', borderColor: 'var(--accent-red)', color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {call}
-              <button onClick={() => toggleArrayItem('excludeList', call)} style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: 0, fontSize: '14px' }}>×</button>
-            </div>
-          ))}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="text"
+            value={newExcludeCall}
+            onChange={(e) => setNewExcludeCall(e.target.value.toUpperCase())}
+            onKeyPress={(e) => e.key === 'Enter' && addToExclude()}
+            placeholder="Enter callsign..."
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              color: 'var(--text-primary)',
+              fontSize: '13px',
+              fontFamily: 'JetBrains Mono'
+            }}
+          />
+          <button onClick={addToExclude} style={{ padding: '8px 16px', background: 'var(--accent-red)', border: 'none', borderRadius: '4px', color: '#fff', fontWeight: '600', cursor: 'pointer' }}>Add</button>
         </div>
       </div>
-    );
-  };
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        {(filters?.excludeList || []).map(call => (
+          <div key={call} style={{ ...chipStyle(false), background: 'rgba(255, 68, 68, 0.2)', borderColor: 'var(--accent-red)', color: 'var(--accent-red)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {call}
+            <button onClick={() => toggleArrayItem('excludeList', call)} style={{ background: 'none', border: 'none', color: 'var(--accent-red)', cursor: 'pointer', padding: 0, fontSize: '14px' }}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{

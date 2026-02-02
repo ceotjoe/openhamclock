@@ -1,6 +1,7 @@
 /**
  * useSatellites Hook
  * Tracks amateur radio satellites using TLE data and satellite.js
+ * Includes orbit track prediction
  */
 import { useState, useEffect, useCallback } from 'react';
 import * as satellite from 'satellite.js';
@@ -43,7 +44,7 @@ export const useSatellites = (observerLocation) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate satellite positions
+  // Calculate satellite positions and orbits
   const calculatePositions = useCallback(() => {
     if (!observerLocation || Object.keys(tleData).length === 0) {
       setLoading(false);
@@ -62,7 +63,7 @@ export const useSatellites = (observerLocation) => {
       };
 
       Object.entries(tleData).forEach(([name, tle]) => {
-        // Server returns tle1/tle2, handle both formats
+        // Handle both line1/line2 and tle1/tle2 formats
         const line1 = tle.line1 || tle.tle1;
         const line2 = tle.line2 || tle.tle2;
         if (!line1 || !line2) return;
@@ -94,6 +95,29 @@ export const useSatellites = (observerLocation) => {
           // Only include if above horizon or popular sat
           const isPopular = AMATEUR_SATS.some(s => name.includes(s));
           if (elevation > -5 || isPopular) {
+            // Calculate orbit track (past 45 min and future 45 min = 90 min total)
+            const track = [];
+            const trackMinutes = 90;
+            const stepMinutes = 1;
+            
+            for (let m = -trackMinutes/2; m <= trackMinutes/2; m += stepMinutes) {
+              const trackTime = new Date(now.getTime() + m * 60 * 1000);
+              const trackPV = satellite.propagate(satrec, trackTime);
+              
+              if (trackPV.position) {
+                const trackGmst = satellite.gstime(trackTime);
+                const trackGd = satellite.eciToGeodetic(trackPV.position, trackGmst);
+                const trackLat = satellite.degreesLat(trackGd.latitude);
+                const trackLon = satellite.degreesLong(trackGd.longitude);
+                track.push([trackLat, trackLon]);
+              }
+            }
+            
+            // Calculate footprint radius (visibility circle)
+            // Formula: radius = Earth_radius * arccos(Earth_radius / (Earth_radius + altitude))
+            const earthRadius = 6371; // km
+            const footprintRadius = earthRadius * Math.acos(earthRadius / (earthRadius + alt));
+
             positions.push({
               name,
               lat,
@@ -103,7 +127,9 @@ export const useSatellites = (observerLocation) => {
               elevation: Math.round(elevation),
               range: Math.round(rangeSat),
               visible: elevation > 0,
-              isPopular
+              isPopular,
+              track,
+              footprintRadius: Math.round(footprintRadius)
             });
           }
         } catch (e) {
@@ -113,7 +139,7 @@ export const useSatellites = (observerLocation) => {
 
       // Sort by elevation (highest first) and limit
       positions.sort((a, b) => b.elevation - a.elevation);
-      setData(positions.slice(0, 20));
+      setData(positions.slice(0, 15));
       setLoading(false);
     } catch (err) {
       console.error('Satellite calculation error:', err);

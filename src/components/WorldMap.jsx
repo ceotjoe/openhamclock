@@ -290,8 +290,9 @@ export const WorldMap = ({
           if (showDXLabels || isHovered) {
             const labelIcon = L.divIcon({
               className: '',
-              html: `<div style="background: ${isHovered ? '#fff' : color}; color: ${isHovered ? color : '#000'}; padding: 3px 8px; border-radius: 4px; font-family: JetBrains Mono; font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid ${isHovered ? color : 'rgba(0,0,0,0.3)'};">${path.dxCall}</div>`,
-              iconAnchor: [0, -10]
+              html: `<span style="display:inline-block;background:${isHovered ? '#fff' : color};color:${isHovered ? color : '#000'};padding:4px 8px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;white-space:nowrap;border:2px solid ${isHovered ? color : 'rgba(0,0,0,0.5)'};box-shadow:0 2px 4px rgba(0,0,0,0.4);">${path.dxCall}</span>`,
+              iconSize: null,
+              iconAnchor: [0, 0]
             });
             const label = L.marker([path.dxLat, path.dxLon], { icon: labelIcon, interactive: false }).addTo(map);
             dxPathsMarkersRef.current.push(label);
@@ -316,8 +317,9 @@ export const WorldMap = ({
         if (spot.lat && spot.lon) {
           const icon = L.divIcon({
             className: '',
-            html: `<div style="background: #aa66ff; color: white; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: JetBrains Mono; white-space: nowrap; border: 1px solid white;">${spot.call}</div>`,
-            iconAnchor: [20, 10]
+            html: `<span style="display:inline-block;background:#aa66ff;color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.4);">${spot.call}</span>`,
+            iconSize: null,
+            iconAnchor: [0, 0]
           });
           const marker = L.marker([spot.lat, spot.lon], { icon })
             .bindPopup(`<b>${spot.call}</b><br>${spot.ref}<br>${spot.freq} ${spot.mode}`)
@@ -328,7 +330,7 @@ export const WorldMap = ({
     }
   }, [potaSpots, showPOTA]);
 
-  // Update satellite markers
+  // Update satellite markers with orbit tracks
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -340,14 +342,70 @@ export const WorldMap = ({
 
     if (showSatellites && satellites && satellites.length > 0) {
       satellites.forEach(sat => {
+        // Draw orbit track if available
+        if (sat.track && sat.track.length > 1) {
+          // Split track into segments to handle date line crossing
+          let segments = [];
+          let currentSegment = [sat.track[0]];
+          
+          for (let i = 1; i < sat.track.length; i++) {
+            const prevLon = sat.track[i-1][1];
+            const currLon = sat.track[i][1];
+            // If longitude jumps more than 180 degrees, start new segment
+            if (Math.abs(currLon - prevLon) > 180) {
+              segments.push(currentSegment);
+              currentSegment = [];
+            }
+            currentSegment.push(sat.track[i]);
+          }
+          segments.push(currentSegment);
+          
+          // Draw each segment
+          segments.forEach(segment => {
+            if (segment.length > 1) {
+              const trackLine = L.polyline(segment, {
+                color: sat.visible ? '#00ffff' : '#006688',
+                weight: 2,
+                opacity: sat.visible ? 0.8 : 0.4,
+                dashArray: sat.visible ? null : '5, 5'
+              }).addTo(map);
+              satTracksRef.current.push(trackLine);
+            }
+          });
+        }
+        
+        // Draw footprint circle if available
+        if (sat.footprintRadius && sat.lat && sat.lon) {
+          const footprint = L.circle([sat.lat, sat.lon], {
+            radius: sat.footprintRadius * 1000, // Convert km to meters
+            color: '#00ffff',
+            weight: 1,
+            opacity: 0.5,
+            fillColor: '#00ffff',
+            fillOpacity: 0.1
+          }).addTo(map);
+          satTracksRef.current.push(footprint);
+        }
+        
+        // Add satellite marker icon
         const icon = L.divIcon({
           className: '',
-          html: `<div style="background: #00ffff; color: #000; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-family: JetBrains Mono; white-space: nowrap; border: 2px solid ${sat.visible ? '#fff' : 'rgba(255,255,255,0.3)'}; font-weight: bold; opacity: ${sat.visible ? 1 : 0.6};">🛰 ${sat.name}</div>`,
-          iconAnchor: [25, 12]
+          html: `<span style="display:inline-block;background:${sat.visible ? '#00ffff' : '#006688'};color:${sat.visible ? '#000' : '#fff'};padding:4px 8px;border-radius:4px;font-size:11px;font-family:'JetBrains Mono',monospace;white-space:nowrap;border:2px solid ${sat.visible ? '#fff' : '#00aaaa'};font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.4);">🛰 ${sat.name}</span>`,
+          iconSize: null,
+          iconAnchor: [0, 0]
         });
         
         const marker = L.marker([sat.lat, sat.lon], { icon })
-          .bindPopup(`<b>🛰 ${sat.name}</b><br>Alt: ${sat.alt} km<br>Az: ${sat.azimuth}° El: ${sat.elevation}°`)
+          .bindPopup(`
+            <b>🛰 ${sat.name}</b><br>
+            <table style="font-size: 11px;">
+              <tr><td>Alt:</td><td>${sat.alt} km</td></tr>
+              <tr><td>Az:</td><td>${sat.azimuth}°</td></tr>
+              <tr><td>El:</td><td>${sat.elevation}°</td></tr>
+              <tr><td>Range:</td><td>${sat.range} km</td></tr>
+              <tr><td>Status:</td><td>${sat.visible ? '<span style="color:green">Visible</span>' : '<span style="color:gray">Below horizon</span>'}</td></tr>
+            </table>
+          `)
           .addTo(map);
         satMarkersRef.current.push(marker);
       });
