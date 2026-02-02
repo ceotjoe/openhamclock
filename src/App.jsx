@@ -626,8 +626,8 @@ const App = () => {
         
         {/* RIGHT SIDEBAR */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
-          {/* DX Cluster */}
-          <div style={{ flex: '0 1 auto', minHeight: '120px', maxHeight: '160px', overflow: 'hidden' }}>
+          {/* DX Cluster - primary panel, takes most space */}
+          <div style={{ flex: '2 1 auto', minHeight: '180px', overflow: 'hidden' }}>
             <DXClusterPanel
               data={dxCluster.data}
               loading={dxCluster.loading}
@@ -643,7 +643,7 @@ const App = () => {
           </div>
           
           {/* PSKReporter - digital mode spots */}
-          <div style={{ flex: '0 1 auto', minHeight: '120px', maxHeight: '160px', overflow: 'hidden' }}>
+          <div style={{ flex: '1 1 auto', minHeight: '140px', overflow: 'hidden' }}>
             <PSKReporterPanel 
               callsign={config.callsign}
               showOnMap={mapLayers.showPSKReporter}
@@ -654,11 +654,6 @@ const App = () => {
                 }
               }}
             />
-          </div>
-          
-          {/* Contests - bigger with live indicators */}
-          <div style={{ flex: '1 1 auto', minHeight: '140px', overflow: 'hidden' }}>
-            <ContestPanel data={contests.data} loading={contests.loading} />
           </div>
           
           {/* DXpeditions */}
@@ -674,6 +669,11 @@ const App = () => {
               showOnMap={mapLayers.showPOTA}
               onToggleMap={togglePOTA}
             />
+          </div>
+          
+          {/* Contests - at bottom, compact */}
+          <div style={{ flex: '0 0 auto', minHeight: '80px', maxHeight: '120px', overflow: 'hidden' }}>
+            <ContestPanel data={contests.data} loading={contests.loading} />
           </div>
         </div>
       </div>

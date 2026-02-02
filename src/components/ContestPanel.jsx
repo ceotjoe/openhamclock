@@ -125,7 +125,7 @@ export const ContestPanel = ({ data, loading }) => {
           </div>
         ) : sortedContests.length > 0 ? (
           <div style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace' }}>
-            {sortedContests.slice(0, 8).map((contest, i) => {
+            {sortedContests.slice(0, 4).map((contest, i) => {
               const live = isContestLive(contest);
               const soon = isStartingSoon(contest);
               
