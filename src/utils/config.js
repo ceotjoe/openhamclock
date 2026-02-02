@@ -7,7 +7,7 @@ export const DEFAULT_CONFIG = {
   callsign: 'N0CALL',
   location: { lat: 40.0150, lon: -105.2705 }, // Boulder, CO (default)
   defaultDX: { lat: 35.6762, lon: 139.6503 }, // Tokyo
-  theme: 'dark', // 'dark', 'light', 'legacy', or 'classic'
+  theme: 'dark', // 'dark', 'light', 'legacy', or 'retro'
   layout: 'modern', // 'modern' or 'legacy'
   refreshIntervals: {
     spaceWeather: 300000,

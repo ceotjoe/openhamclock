@@ -223,19 +223,286 @@ const App = () => {
       alignItems: 'center',
       overflow: 'hidden'
     }}>
-      <div style={{ 
-        width: scale < 1 ? `${100 / scale}vw` : '100vw',
-        height: scale < 1 ? `${100 / scale}vh` : '100vh',
-        transform: `scale(${scale})`,
-        transformOrigin: 'center center',
-        display: 'grid',
-        gridTemplateColumns: '270px 1fr 300px',
-        gridTemplateRows: '65px 1fr',
-        gap: '8px',
-        padding: '8px',
-        overflow: 'hidden',
-        boxSizing: 'border-box'
-      }}>
+      {config.layout === 'classic' ? (
+        /* CLASSIC HAMCLOCK-STYLE LAYOUT */
+        <div style={{ 
+          width: '100vw',
+          height: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#000000',
+          fontFamily: 'JetBrains Mono, monospace',
+          overflow: 'hidden'
+        }}>
+          {/* TOP BAR - HamClock style */}
+          <div style={{ 
+            display: 'grid',
+            gridTemplateColumns: '280px 1fr 300px',
+            height: '130px',
+            borderBottom: '2px solid #333',
+            background: '#000'
+          }}>
+            {/* Callsign & Time */}
+            <div style={{ padding: '8px 12px', borderRight: '1px solid #333' }}>
+              <div 
+                style={{ 
+                  fontSize: '42px', 
+                  fontWeight: '900', 
+                  color: '#ff4444', 
+                  fontFamily: 'Orbitron, monospace',
+                  cursor: 'pointer',
+                  lineHeight: 1
+                }}
+                onClick={() => setShowSettings(true)}
+                title="Click for settings"
+              >
+                {config.callsign}
+              </div>
+              <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
+                Up 35d 18h • v4.20
+              </div>
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ fontSize: '36px', fontWeight: '700', color: '#00ff00', fontFamily: 'Orbitron, monospace', lineHeight: 1 }}>
+                  {utcTime}<span style={{ fontSize: '20px', color: '#00cc00' }}>:{String(new Date().getUTCSeconds()).padStart(2, '0')}</span>
+                </div>
+                <div style={{ fontSize: '14px', color: '#00cc00', marginTop: '2px' }}>
+                  {utcDate} <span style={{ color: '#666', marginLeft: '8px' }}>UTC</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Solar Indices - SSN & SFI */}
+            <div style={{ display: 'flex', borderRight: '1px solid #333' }}>
+              {/* SSN */}
+              <div style={{ flex: 1, padding: '8px', borderRight: '1px solid #333' }}>
+                <div style={{ fontSize: '10px', color: '#888', textAlign: 'center' }}>Sunspot Number</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ flex: 1, height: '70px', background: '#001100', border: '1px solid #333', borderRadius: '2px', padding: '4px' }}>
+                    {solarIndices?.data?.ssn?.history?.length > 0 && (
+                      <svg width="100%" height="100%" viewBox="0 0 100 60" preserveAspectRatio="none">
+                        {(() => {
+                          const data = solarIndices.data.ssn.history.slice(-30);
+                          const values = data.map(d => d.value);
+                          const max = Math.max(...values, 1);
+                          const min = Math.min(...values, 0);
+                          const range = max - min || 1;
+                          const points = data.map((d, i) => {
+                            const x = (i / (data.length - 1)) * 100;
+                            const y = 60 - ((d.value - min) / range) * 55;
+                            return `${x},${y}`;
+                          }).join(' ');
+                          return <polyline points={points} fill="none" stroke="#00ff00" strokeWidth="1.5" />;
+                        })()}
+                      </svg>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '48px', fontWeight: '700', color: '#00ffff', fontFamily: 'Orbitron, monospace' }}>
+                    {solarIndices?.data?.ssn?.current || '--'}
+                  </div>
+                </div>
+                <div style={{ fontSize: '10px', color: '#666', textAlign: 'center', marginTop: '2px' }}>-30 Days</div>
+              </div>
+              
+              {/* SFI */}
+              <div style={{ flex: 1, padding: '8px' }}>
+                <div style={{ fontSize: '10px', color: '#888', textAlign: 'center' }}>10.7 cm Solar flux</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ flex: 1, height: '70px', background: '#001100', border: '1px solid #333', borderRadius: '2px', padding: '4px' }}>
+                    {solarIndices?.data?.sfi?.history?.length > 0 && (
+                      <svg width="100%" height="100%" viewBox="0 0 100 60" preserveAspectRatio="none">
+                        {(() => {
+                          const data = solarIndices.data.sfi.history.slice(-30);
+                          const values = data.map(d => d.value);
+                          const max = Math.max(...values, 1);
+                          const min = Math.min(...values);
+                          const range = max - min || 1;
+                          const points = data.map((d, i) => {
+                            const x = (i / (data.length - 1)) * 100;
+                            const y = 60 - ((d.value - min) / range) * 55;
+                            return `${x},${y}`;
+                          }).join(' ');
+                          return <polyline points={points} fill="none" stroke="#00ff00" strokeWidth="1.5" />;
+                        })()}
+                      </svg>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '48px', fontWeight: '700', color: '#ff66ff', fontFamily: 'Orbitron, monospace' }}>
+                    {solarIndices?.data?.sfi?.current || '--'}
+                  </div>
+                </div>
+                <div style={{ fontSize: '10px', color: '#666', textAlign: 'center', marginTop: '2px' }}>-30 Days +7</div>
+              </div>
+            </div>
+            
+            {/* Live Spots & Indices */}
+            <div style={{ display: 'flex' }}>
+              {/* Live Spots by Band */}
+              <div style={{ flex: 1, padding: '8px', borderRight: '1px solid #333' }}>
+                <div style={{ fontSize: '12px', color: '#ff6666', fontWeight: '700' }}>Live Spots</div>
+                <div style={{ fontSize: '9px', color: '#888', marginBottom: '4px' }}>of {deGrid} - 15 mins</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px', fontSize: '10px' }}>
+                  {[
+                    { band: '160m', color: '#ff6666' },
+                    { band: '80m', color: '#ff9966' },
+                    { band: '60m', color: '#ffcc66' },
+                    { band: '40m', color: '#ccff66' },
+                    { band: '30m', color: '#66ff99' },
+                    { band: '20m', color: '#66ffcc' },
+                    { band: '17m', color: '#66ccff' },
+                    { band: '15m', color: '#6699ff' },
+                    { band: '12m', color: '#9966ff' },
+                    { band: '10m', color: '#cc66ff' },
+                  ].map(b => (
+                    <div key={b.band} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: b.color }}>{b.band}</span>
+                      <span style={{ color: '#fff' }}>
+                        {dxCluster.data?.filter(s => {
+                          const freq = parseFloat(s.freq);
+                          const bands = {
+                            '160m': [1.8, 2], '80m': [3.5, 4], '60m': [5.3, 5.4], '40m': [7, 7.3],
+                            '30m': [10.1, 10.15], '20m': [14, 14.35], '17m': [18.068, 18.168],
+                            '15m': [21, 21.45], '12m': [24.89, 24.99], '10m': [28, 29.7]
+                          };
+                          const r = bands[b.band];
+                          return r && freq >= r[0] && freq <= r[1];
+                        }).length || 0}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Space Weather Indices */}
+              <div style={{ width: '70px', padding: '8px', fontSize: '11px' }}>
+                <div style={{ marginBottom: '6px' }}>
+                  <div style={{ color: '#888' }}>X-Ray</div>
+                  <div style={{ color: '#ffff00', fontSize: '16px', fontWeight: '700' }}>M3.0</div>
+                </div>
+                <div style={{ marginBottom: '6px' }}>
+                  <div style={{ color: '#888' }}>Kp</div>
+                  <div style={{ color: '#00ff00', fontSize: '16px', fontWeight: '700' }}>{spaceWeather?.data?.kIndex ?? '--'}</div>
+                </div>
+                <div style={{ marginBottom: '6px' }}>
+                  <div style={{ color: '#888' }}>Bz</div>
+                  <div style={{ color: '#00ffff', fontSize: '16px', fontWeight: '700' }}>-0</div>
+                </div>
+                <div>
+                  <div style={{ color: '#888' }}>Aurora</div>
+                  <div style={{ color: '#ff00ff', fontSize: '16px', fontWeight: '700' }}>18</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* MAIN AREA */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            {/* DX Cluster List */}
+            <div style={{ width: '220px', borderRight: '1px solid #333', display: 'flex', flexDirection: 'column', background: '#000' }}>
+              <div style={{ padding: '4px 8px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#ff6666', fontSize: '14px', fontWeight: '700' }}>Cluster</span>
+                <span style={{ color: '#00ff00', fontSize: '10px' }}>dxspider.co.uk:7300</span>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', fontSize: '11px' }}>
+                {dxCluster.data?.slice(0, 25).map((spot, i) => (
+                  <div 
+                    key={i} 
+                    style={{ 
+                      padding: '2px 6px', 
+                      display: 'grid', 
+                      gridTemplateColumns: '65px 1fr 35px',
+                      gap: '4px',
+                      borderBottom: '1px solid #111',
+                      cursor: 'pointer',
+                      background: hoveredSpot?.call === spot.call ? '#333' : 'transparent'
+                    }}
+                    onMouseEnter={() => setHoveredSpot(spot)}
+                    onMouseLeave={() => setHoveredSpot(null)}
+                  >
+                    <span style={{ color: '#ffff00' }}>{parseFloat(spot.freq).toFixed(1)}</span>
+                    <span style={{ color: '#00ffff' }}>{spot.call}</span>
+                    <span style={{ color: '#888' }}>{spot.time || '--'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Map */}
+            <div style={{ flex: 1, position: 'relative' }}>
+              <WorldMap
+                deLocation={config.location}
+                dxLocation={dxLocation}
+                onDXChange={handleDXChange}
+                potaSpots={potaSpots.data}
+                mySpots={mySpots.data}
+                dxPaths={dxPaths.data}
+                dxFilters={dxFilters}
+                satellites={satellites.data}
+                showDXPaths={mapLayers.showDXPaths}
+                showDXLabels={mapLayers.showDXLabels}
+                onToggleDXLabels={toggleDXLabels}
+                showPOTA={mapLayers.showPOTA}
+                showSatellites={mapLayers.showSatellites}
+                onToggleSatellites={toggleSatellites}
+                hoveredSpot={hoveredSpot}
+              />
+              
+              {/* Settings button overlay */}
+              <button
+                onClick={() => setShowSettings(true)}
+                style={{
+                  position: 'absolute',
+                  top: '10px',
+                  left: '10px',
+                  background: 'rgba(0,0,0,0.7)',
+                  border: '1px solid #444',
+                  color: '#fff',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  borderRadius: '4px'
+                }}
+              >
+                ⚙ Settings
+              </button>
+            </div>
+          </div>
+          
+          {/* BOTTOM - Frequency Scale */}
+          <div style={{ 
+            height: '24px', 
+            background: 'linear-gradient(90deg, #ff0000 0%, #ff8800 15%, #ffff00 30%, #00ff00 45%, #00ffff 60%, #0088ff 75%, #8800ff 90%, #ff00ff 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-around',
+            fontSize: '10px',
+            color: '#000',
+            fontWeight: '700'
+          }}>
+            <span>MHz</span>
+            <span>5</span>
+            <span>10</span>
+            <span>15</span>
+            <span>20</span>
+            <span>25</span>
+            <span>30</span>
+            <span>35</span>
+          </div>
+        </div>
+      ) : (
+        /* MODERN LAYOUT */
+        <div style={{ 
+          width: scale < 1 ? `${100 / scale}vw` : '100vw',
+          height: scale < 1 ? `${100 / scale}vh` : '100vh',
+          transform: `scale(${scale})`,
+          transformOrigin: 'center center',
+          display: 'grid',
+          gridTemplateColumns: '270px 1fr 300px',
+          gridTemplateRows: '65px 1fr',
+          gap: '8px',
+          padding: '8px',
+          overflow: 'hidden',
+          boxSizing: 'border-box'
+        }}>
         {/* TOP BAR */}
         <Header
           config={config}
@@ -368,6 +635,7 @@ const App = () => {
           </div>
         </div>
       </div>
+      )}
       
       {/* Modals */}
       <SettingsPanel 

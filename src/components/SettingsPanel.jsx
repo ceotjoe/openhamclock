@@ -107,12 +107,12 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
     dark: '→ Modern dark theme (default)',
     light: '→ Light theme for daytime use',
     legacy: '→ Green terminal CRT style',
-    classic: '→ 90s Windows retro style'
+    retro: '→ 90s Windows retro style'
   };
 
   const layoutDescriptions = {
     modern: '→ Modern responsive grid layout',
-    classic: '→ Classic HamClock-style layout'
+    classic: '→ Original HamClock-style layout'
   };
 
   return (
@@ -270,7 +270,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
             Theme
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-            {['dark', 'light', 'legacy', 'classic'].map((t) => (
+            {['dark', 'light', 'legacy', 'retro'].map((t) => (
               <button
                 key={t}
                 onClick={() => setTheme(t)}
