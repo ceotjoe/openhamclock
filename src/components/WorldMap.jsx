@@ -21,11 +21,13 @@ export const WorldMap = ({
   dxPaths, 
   dxFilters, 
   satellites, 
+  pskReporterSpots,
   showDXPaths, 
   showDXLabels, 
   onToggleDXLabels, 
   showPOTA, 
   showSatellites, 
+  showPSKReporter,
   onToggleSatellites, 
   hoveredSpot 
 }) => {
@@ -44,6 +46,7 @@ export const WorldMap = ({
   const dxPathsMarkersRef = useRef([]);
   const satMarkersRef = useRef([]);
   const satTracksRef = useRef([]);
+  const pskMarkersRef = useRef([]);
   
   // Load map style from localStorage
   const getStoredMapSettings = () => {
@@ -415,6 +418,55 @@ export const WorldMap = ({
       });
     }
   }, [satellites, showSatellites]);
+
+  // Update PSKReporter markers
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    pskMarkersRef.current.forEach(m => map.removeLayer(m));
+    pskMarkersRef.current = [];
+
+    if (showPSKReporter && pskReporterSpots && pskReporterSpots.length > 0 && deLocation) {
+      pskReporterSpots.forEach(spot => {
+        if (spot.lat && spot.lon) {
+          const displayCall = spot.receiver || spot.sender;
+          const freqMHz = spot.freqMHz || (spot.freq ? (spot.freq / 1000000).toFixed(3) : '?');
+          const bandColor = getBandColor(parseFloat(freqMHz));
+          
+          // Draw line from DE to spot location
+          const points = getGreatCirclePoints(
+            [deLocation.lat, deLocation.lon],
+            [spot.lat, spot.lon],
+            50
+          );
+          
+          const line = L.polyline(points, {
+            color: bandColor,
+            weight: 1.5,
+            opacity: 0.5,
+            dashArray: '4, 4'
+          }).addTo(map);
+          pskMarkersRef.current.push(line);
+          
+          // Add small dot marker at spot location
+          const circle = L.circleMarker([spot.lat, spot.lon], {
+            radius: 4,
+            fillColor: bandColor,
+            color: '#fff',
+            weight: 1,
+            opacity: 0.9,
+            fillOpacity: 0.8
+          }).bindPopup(`
+            <b>${displayCall}</b><br>
+            ${spot.mode} @ ${freqMHz} MHz<br>
+            ${spot.snr !== null ? `SNR: ${spot.snr > 0 ? '+' : ''}${spot.snr} dB` : ''}
+          `).addTo(map);
+          pskMarkersRef.current.push(circle);
+        }
+      });
+    }
+  }, [pskReporterSpots, showPSKReporter, deLocation]);
 
   return (
     <div style={{ position: 'relative', height: '100%', minHeight: '200px' }}>

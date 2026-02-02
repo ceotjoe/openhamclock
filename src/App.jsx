@@ -191,6 +191,7 @@ const App = () => {
   const mySpots = useMySpots(config.callsign);
   const satellites = useSatellites(config.location);
   const localWeather = useLocalWeather(config.location);
+  const pskReporter = usePSKReporter(config.callsign, { minutes: 15, enabled: config.callsign !== 'N0CALL' });
 
   // Computed values
   const deGrid = useMemo(() => calculateGridSquare(config.location.lat, config.location.lon), [config.location]);
@@ -460,11 +461,13 @@ const App = () => {
                 dxPaths={dxPaths.data}
                 dxFilters={dxFilters}
                 satellites={satellites.data}
+                pskReporterSpots={[...(pskReporter.txReports || []), ...(pskReporter.rxReports || [])]}
                 showDXPaths={mapLayers.showDXPaths}
                 showDXLabels={mapLayers.showDXLabels}
                 onToggleDXLabels={toggleDXLabels}
                 showPOTA={mapLayers.showPOTA}
                 showSatellites={mapLayers.showSatellites}
+                showPSKReporter={mapLayers.showPSKReporter}
                 onToggleSatellites={toggleSatellites}
                 hoveredSpot={hoveredSpot}
               />
@@ -596,11 +599,13 @@ const App = () => {
             dxPaths={dxPaths.data}
             dxFilters={dxFilters}
             satellites={satellites.data}
+            pskReporterSpots={[...(pskReporter.txReports || []), ...(pskReporter.rxReports || [])]}
             showDXPaths={mapLayers.showDXPaths}
             showDXLabels={mapLayers.showDXLabels}
             onToggleDXLabels={toggleDXLabels}
             showPOTA={mapLayers.showPOTA}
             showSatellites={mapLayers.showSatellites}
+            showPSKReporter={mapLayers.showPSKReporter}
             onToggleSatellites={toggleSatellites}
             hoveredSpot={hoveredSpot}
           />
@@ -620,9 +625,9 @@ const App = () => {
         </div>
         
         {/* RIGHT SIDEBAR */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' }}>
-          {/* DX Cluster - reduced size to make room for PSKReporter */}
-          <div style={{ flex: '1 1 0', minHeight: '180px', maxHeight: '220px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
+          {/* DX Cluster - primary panel */}
+          <div style={{ flex: '1 1 auto', minHeight: '150px', overflow: 'hidden' }}>
             <DXClusterPanel
               data={dxCluster.data}
               loading={dxCluster.loading}
@@ -637,10 +642,12 @@ const App = () => {
             />
           </div>
           
-          {/* PSKReporter - where your digital signals are heard */}
-          <div style={{ flex: '1 1 0', minHeight: '180px', maxHeight: '220px', overflow: 'hidden' }}>
+          {/* PSKReporter - digital mode spots */}
+          <div style={{ flex: '1 1 auto', minHeight: '150px', overflow: 'hidden' }}>
             <PSKReporterPanel 
               callsign={config.callsign}
+              showOnMap={mapLayers.showPSKReporter}
+              onToggleMap={togglePSKReporter}
               onShowOnMap={(report) => {
                 if (report.lat && report.lon) {
                   setDxLocation({ lat: report.lat, lon: report.lon, call: report.receiver || report.sender });
@@ -649,13 +656,13 @@ const App = () => {
             />
           </div>
           
-          {/* DXpeditions - smaller */}
-          <div style={{ flex: '0 0 auto', maxHeight: '120px', overflow: 'hidden' }}>
+          {/* DXpeditions */}
+          <div style={{ flex: '0 0 auto', minHeight: '80px', maxHeight: '110px', overflow: 'hidden' }}>
             <DXpeditionPanel data={dxpeditions.data} loading={dxpeditions.loading} />
           </div>
           
-          {/* POTA - smaller */}
-          <div style={{ flex: '0 0 auto', maxHeight: '100px', overflow: 'hidden' }}>
+          {/* POTA */}
+          <div style={{ flex: '0 0 auto', minHeight: '70px', maxHeight: '100px', overflow: 'hidden' }}>
             <POTAPanel 
               data={potaSpots.data} 
               loading={potaSpots.loading} 
@@ -664,8 +671,8 @@ const App = () => {
             />
           </div>
           
-          {/* Contests - smaller */}
-          <div style={{ flex: '0 0 auto', maxHeight: '120px', overflow: 'hidden' }}>
+          {/* Contests */}
+          <div style={{ flex: '0 0 auto', minHeight: '70px', maxHeight: '100px', overflow: 'hidden' }}>
             <ContestPanel data={contests.data} loading={contests.loading} />
           </div>
         </div>
