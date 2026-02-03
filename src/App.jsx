@@ -99,7 +99,9 @@ const App = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showDXFilters, setShowDXFilters] = useState(false);
   const [showPSKFilters, setShowPSKFilters] = useState(false);
-  const [weatherExpanded, setWeatherExpanded] = useState(false);
+  const [weatherExpanded, setWeatherExpanded] = useState(() => {
+    try { return localStorage.getItem('openhamclock_weatherExpanded') === 'true'; } catch { return false; }
+  });
   const [tempUnit, setTempUnit] = useState(() => {
     try { return localStorage.getItem('openhamclock_tempUnit') || 'F'; } catch { return 'F'; }
   });
@@ -628,7 +630,7 @@ const App = () => {
                 {/* Compact summary row — always visible */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div 
-                    onClick={() => setWeatherExpanded(!weatherExpanded)}
+                    onClick={() => { const next = !weatherExpanded; setWeatherExpanded(next); try { localStorage.setItem('openhamclock_weatherExpanded', next.toString()); } catch {} }}
                     style={{ 
                       display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
                       userSelect: 'none', flex: 1, minWidth: 0,

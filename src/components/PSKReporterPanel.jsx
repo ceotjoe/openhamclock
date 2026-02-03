@@ -32,10 +32,18 @@ const PSKReporterPanel = ({
   showWSJTXOnMap,
   onToggleWSJTXMap
 }) => {
-  const [panelMode, setPanelMode] = useState('psk');
-  const [activeTab, setActiveTab] = useState('tx');
+  const [panelMode, setPanelMode] = useState(() => {
+    try { const s = localStorage.getItem('openhamclock_pskPanelMode'); return s || 'psk'; } catch { return 'psk'; }
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    try { const s = localStorage.getItem('openhamclock_pskActiveTab'); return s || 'tx'; } catch { return 'tx'; }
+  });
   const [wsjtxTab, setWsjtxTab] = useState('decodes');
   const [wsjtxFilter, setWsjtxFilter] = useState('all'); // 'all' | 'cq' | band name
+  
+  // Persist panel mode and active tab
+  const setPanelModePersist = (v) => { setPanelMode(v); try { localStorage.setItem('openhamclock_pskPanelMode', v); } catch {} };
+  const setActiveTabPersist = (v) => { setActiveTab(v); try { localStorage.setItem('openhamclock_pskActiveTab', v); } catch {} };
   
   // PSKReporter hook
   const { 
@@ -174,10 +182,10 @@ const PSKReporterPanel = ({
       }}>
         {/* Mode toggle */}
         <div style={{ display: 'flex' }}>
-          <button onClick={() => setPanelMode('psk')} style={segBtn(panelMode === 'psk', 'var(--accent-primary)')}>
+          <button onClick={() => setPanelModePersist('psk')} style={segBtn(panelMode === 'psk', 'var(--accent-primary)')}>
             PSKReporter
           </button>
-          <button onClick={() => setPanelMode('wsjtx')} style={segBtn(panelMode === 'wsjtx', '#a78bfa')}>
+          <button onClick={() => setPanelModePersist('wsjtx')} style={segBtn(panelMode === 'wsjtx', '#a78bfa')}>
             WSJT-X
           </button>
         </div>
@@ -244,10 +252,10 @@ const PSKReporterPanel = ({
       <div style={{ display: 'flex', gap: '4px', marginBottom: '5px', flexShrink: 0 }}>
         {panelMode === 'psk' ? (
           <>
-            <button onClick={() => setActiveTab('tx')} style={subTabBtn(activeTab === 'tx', '#4ade80')}>
+            <button onClick={() => setActiveTabPersist('tx')} style={subTabBtn(activeTab === 'tx', '#4ade80')}>
               ▲ Heard ({pskFilterCount > 0 ? filteredTx.length : txCount})
             </button>
-            <button onClick={() => setActiveTab('rx')} style={subTabBtn(activeTab === 'rx', '#60a5fa')}>
+            <button onClick={() => setActiveTabPersist('rx')} style={subTabBtn(activeTab === 'rx', '#60a5fa')}>
               ▼ Hearing ({pskFilterCount > 0 ? filteredRx.length : rxCount})
             </button>
           </>

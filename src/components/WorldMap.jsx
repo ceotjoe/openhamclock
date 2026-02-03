@@ -76,10 +76,12 @@ export const WorldMap = ({
     zoom: storedSettings.zoom || 2.5
   });
   
-  // Save map settings to localStorage when changed
+  // Save map settings to localStorage when changed (merge, don't overwrite)
   useEffect(() => {
     try {
+      const existing = getStoredMapSettings();
       localStorage.setItem('openhamclock_mapSettings', JSON.stringify({
+        ...existing,
         mapStyle,
         center: mapView.center,
         zoom: mapView.zoom

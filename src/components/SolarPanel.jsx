@@ -41,7 +41,9 @@ export const SolarPanel = ({ solarIndices }) => {
       return 'image';
     } catch (e) { return 'image'; }
   });
-  const [imageType, setImageType] = useState('0193');
+  const [imageType, setImageType] = useState(() => {
+    try { return localStorage.getItem('openhamclock_solarImageType') || '0193'; } catch { return '0193'; }
+  });
   const [xrayData, setXrayData] = useState(null);
   const [xrayLoading, setXrayLoading] = useState(false);
   
@@ -417,7 +419,7 @@ export const SolarPanel = ({ solarIndices }) => {
           {mode === 'image' && (
             <select 
               value={imageType}
-              onChange={(e) => setImageType(e.target.value)}
+              onChange={(e) => { setImageType(e.target.value); try { localStorage.setItem('openhamclock_solarImageType', e.target.value); } catch {} }}
               onClick={(e) => e.stopPropagation()}
               style={{
                 background: 'var(--bg-tertiary)',
