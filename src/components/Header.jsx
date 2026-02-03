@@ -3,7 +3,7 @@
  * Top bar with callsign, clocks, weather, and controls
  */
 import React from 'react';
-
+import { IconGear, IconExpand, IconShrink } from './Icons.jsx';
 export const Header = ({
   config,
   utcTime,
@@ -146,7 +146,7 @@ export const Header = ({
             whiteSpace: 'nowrap'
           }}
         >
-          ⚙ Settings
+          <IconGear size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />Settings
         </button>
         <button
           onClick={onFullscreenToggle}
@@ -162,7 +162,10 @@ export const Header = ({
           }}
           title={isFullscreen ? "Exit Fullscreen (Esc)" : "Enter Fullscreen"}
         >
-          {isFullscreen ? '⛶ Exit' : '⛶ Full'}
+          {isFullscreen 
+            ? <><IconShrink size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />Exit</>
+            : <><IconExpand size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />Full</>
+          }
         </button>
       </div>
     </div>
