@@ -563,25 +563,74 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
       
       // Only create polygon if we have valid points
       if (enhancedUpper.length > 2 && enhancedLower.length > 2) {
-        // Create polygon for enhanced zone
-        const enhancedZone = [...enhancedUpper, ...enhancedLower.reverse()];
-        const enhancedPoly = L.polygon(enhancedZone, {
-          color: '#ffaa00',
-          fillColor: '#ffaa00',
-          fillOpacity: opacity * 0.15,
-          weight: 1,
-          opacity: opacity * 0.3
-        });
-        enhancedPoly.bindPopup(`
-          <div style="font-family: 'JetBrains Mono', monospace;">
-            <b>⭐ Enhanced DX Zone</b><br>
-            Best HF propagation window<br>
-            ±5° from terminator<br>
-            Ideal for long-distance contacts
-          </div>
-        `);
-        enhancedPoly.addTo(map);
-        newLayers.push(enhancedPoly);
+        // Split both upper and lower lines at date line
+        const upperSegments = splitAtDateLine(enhancedUpper);
+        const lowerSegments = splitAtDateLine(enhancedLower);
+        
+        // For each upper segment, find corresponding lower segment and create polygon
+        // If there's only one segment in each, create single polygon
+        if (upperSegments.length === 1 && lowerSegments.length === 1) {
+          // No date line crossing - create single polygon
+          const enhancedZone = [...upperSegments[0], ...lowerSegments[0].reverse()];
+          const enhancedPoly = L.polygon(enhancedZone, {
+            color: '#ffaa00',
+            fillColor: '#ffaa00',
+            fillOpacity: opacity * 0.15,
+            weight: 1,
+            opacity: opacity * 0.3
+          });
+          enhancedPoly.bindPopup(`
+            <div style="font-family: 'JetBrains Mono', monospace;">
+              <b>⭐ Enhanced DX Zone</b><br>
+              Best HF propagation window<br>
+              ±5° from terminator<br>
+              Ideal for long-distance contacts
+            </div>
+          `);
+          enhancedPoly.addTo(map);
+          newLayers.push(enhancedPoly);
+        } else {
+          // Date line crossing - create multiple polygons
+          // Match segments by their longitude ranges
+          upperSegments.forEach((upperSeg, i) => {
+            // Find matching lower segment with similar longitude range
+            const upperLons = upperSeg.map(p => p[1]);
+            const upperMinLon = Math.min(...upperLons);
+            const upperMaxLon = Math.max(...upperLons);
+            
+            // Find lower segment that overlaps with this upper segment
+            const matchingLowerSeg = lowerSegments.find(lowerSeg => {
+              const lowerLons = lowerSeg.map(p => p[1]);
+              const lowerMinLon = Math.min(...lowerLons);
+              const lowerMaxLon = Math.max(...lowerLons);
+              
+              // Check for longitude overlap
+              return (lowerMinLon <= upperMaxLon && lowerMaxLon >= upperMinLon) ||
+                     (upperMinLon <= lowerMaxLon && upperMaxLon >= lowerMinLon);
+            });
+            
+            if (matchingLowerSeg && matchingLowerSeg.length > 1) {
+              const enhancedZone = [...upperSeg, ...matchingLowerSeg.reverse()];
+              const enhancedPoly = L.polygon(enhancedZone, {
+                color: '#ffaa00',
+                fillColor: '#ffaa00',
+                fillOpacity: opacity * 0.15,
+                weight: 1,
+                opacity: opacity * 0.3
+              });
+              enhancedPoly.bindPopup(`
+                <div style="font-family: 'JetBrains Mono', monospace;">
+                  <b>⭐ Enhanced DX Zone</b><br>
+                  Best HF propagation window<br>
+                  ±5° from terminator<br>
+                  Ideal for long-distance contacts
+                </div>
+              `);
+              enhancedPoly.addTo(map);
+              newLayers.push(enhancedPoly);
+            }
+          });
+        }
       }
     }
     
