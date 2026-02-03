@@ -263,6 +263,71 @@ function logErrorOnce(category, message) {
   return false;
 }
 
+// ============================================
+// VISITOR TRACKING
+// ============================================
+// Lightweight in-memory visitor counter — tracks unique IPs per day
+// No cookies, no external analytics, no persistent storage
+// Resets on server restart; logs daily summary
+
+const visitorStats = {
+  today: new Date().toISOString().slice(0, 10),  // YYYY-MM-DD
+  uniqueIPs: new Set(),
+  totalRequests: 0,
+  history: []  // Last 30 days of { date, uniqueVisitors, totalRequests }
+};
+
+function rolloverVisitorStats() {
+  const now = new Date().toISOString().slice(0, 10);
+  if (now !== visitorStats.today) {
+    // Save yesterday's stats to history
+    visitorStats.history.push({
+      date: visitorStats.today,
+      uniqueVisitors: visitorStats.uniqueIPs.size,
+      totalRequests: visitorStats.totalRequests
+    });
+    // Keep only last 30 days
+    if (visitorStats.history.length > 30) {
+      visitorStats.history = visitorStats.history.slice(-30);
+    }
+    console.log(`[Visitors] Daily summary for ${visitorStats.today}: ${visitorStats.uniqueIPs.size} unique visitors, ${visitorStats.totalRequests} total requests`);
+    // Reset for new day
+    visitorStats.today = now;
+    visitorStats.uniqueIPs = new Set();
+    visitorStats.totalRequests = 0;
+  }
+}
+
+// Visitor tracking middleware — only counts page loads and API config fetches
+// (not every API poll, which would inflate the count)
+app.use((req, res, next) => {
+  rolloverVisitorStats();
+  
+  // Only count meaningful "visits" — initial page load or config fetch
+  // This avoids counting every 5-second DX cluster poll as a "visit"
+  const countableRoutes = ['/', '/index.html', '/api/config'];
+  if (countableRoutes.includes(req.path)) {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
+    const isNew = !visitorStats.uniqueIPs.has(ip);
+    visitorStats.uniqueIPs.add(ip);
+    visitorStats.totalRequests++;
+    
+    if (isNew) {
+      logInfo(`[Visitors] New visitor today (#${visitorStats.uniqueIPs.size}) from ${ip.replace(/\d+$/, 'x')}`);
+    }
+  }
+  
+  next();
+});
+
+// Log visitor count every hour
+setInterval(() => {
+  rolloverVisitorStats();
+  if (visitorStats.uniqueIPs.size > 0) {
+    console.log(`[Visitors] Today so far: ${visitorStats.uniqueIPs.size} unique visitors, ${visitorStats.totalRequests} requests`);
+  }
+}, 60 * 60 * 1000);
+
 // Serve static files
 // dist/ contains the built React app (from npm run build)
 // public/ contains the fallback page if build hasn't run
@@ -3593,11 +3658,20 @@ function getLastWeekendOfMonth(year, month) {
 // ============================================
 
 app.get('/api/health', (req, res) => {
+  rolloverVisitorStats();
   res.json({
     status: 'ok',
     version: APP_VERSION,
     uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    visitors: {
+      today: {
+        date: visitorStats.today,
+        uniqueVisitors: visitorStats.uniqueIPs.size,
+        totalRequests: visitorStats.totalRequests
+      },
+      history: visitorStats.history
+    }
   });
 });
 
