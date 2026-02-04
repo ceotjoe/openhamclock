@@ -724,9 +724,23 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign 
     controlRef.current = control;
 
     // Make the control draggable and minimizable
+    // Use setTimeout to ensure DOM is ready
     setTimeout(() => {
       const controlElement = control.getContainer();
       if (controlElement) {
+        // Apply saved position IMMEDIATELY before making draggable
+        const saved = localStorage.getItem('rbn-panel-position');
+        if (saved) {
+          try {
+            const { top, left } = JSON.parse(saved);
+            controlElement.style.position = 'fixed';
+            controlElement.style.top = top + 'px';
+            controlElement.style.left = left + 'px';
+            controlElement.style.right = 'auto';
+            controlElement.style.bottom = 'auto';
+          } catch (e) {}
+        }
+        
         makeDraggable(controlElement, 'rbn-panel-position');
         addMinimizeToggle(controlElement, 'rbn-panel');
       }
@@ -738,24 +752,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign 
         controlRef.current = null;
       }
     };
-  }, [map, enabled, callsign]); // Only recreate when map, enabled, or callsign changes
-
-  // Separate effect to update stats display without recreating control
-  useEffect(() => {
-    if (!enabled || !controlRef.current) return;
-    
-    const container = controlRef.current.getContainer();
-    if (!container) return;
-    
-    // Update stats in existing control
-    const statsDiv = container.querySelector('div:nth-child(2)');
-    if (statsDiv) {
-      statsDiv.innerHTML = `
-        Spots: <b>${stats.total}</b> | Skimmers: <b>${stats.skimmers}</b><br>
-        Avg SNR: <b>${stats.avgSNR} dB</b>
-      `;
-    }
-  }, [enabled, stats]);
+  }, [map, enabled, stats, selectedBand, timeWindow, minSNR, showPaths, callsign]);
 
   // Cleanup on disable
   useEffect(() => {
