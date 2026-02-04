@@ -6,7 +6,7 @@
 // Default layout configuration with individual dockable panels
 export const DEFAULT_LAYOUT = {
   global: {
-    tabEnableFloat: true,
+    tabEnableFloat: false,
     tabSetMinWidth: 200,
     tabSetMinHeight: 100,
     borderMinSize: 100,
