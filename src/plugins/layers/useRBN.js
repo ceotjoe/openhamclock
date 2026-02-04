@@ -229,12 +229,22 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign 
         
         console.log(`[RBN] Found ${mySpots.length} spots for ${callsign}`);
         
+        // Log details of found spots
+        if (mySpots.length > 0) {
+          console.log(`[RBN] Spot details for ${callsign}:`);
+          mySpots.forEach((spot, idx) => {
+            console.log(`  ${idx + 1}. Skimmer: ${spot.callsign}, Freq: ${spot.freqMHz} MHz, SNR: ${spot.snr} dB, Band: ${spot.band}, Grid: ${spot.grid || 'MISSING'}, HasLat: ${!!spot.skimmerLat}, HasLon: ${!!spot.skimmerLon}`);
+          });
+        }
+        
         // Apply band and SNR filters
         const filteredSpots = mySpots.filter(spot => {
           const meetsFilter = selectedBand === 'all' || spot.band === selectedBand;
           const meetsSNR = (spot.snr || 0) >= minSNR;
           return meetsFilter && meetsSNR;
         });
+        
+        console.log(`[RBN] After filters (band: ${selectedBand}, minSNR: ${minSNR}): ${filteredSpots.length} spots`);
         
         // Lookup locations for each unique skimmer
         const spotsWithLocations = await Promise.all(
@@ -266,7 +276,15 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign 
           })
         );
         
-        console.log(`[RBN] Spots with locations:`, spotsWithLocations.filter(s => s.grid).length, 'out of', spotsWithLocations.length);
+        const spotsWithGrid = spotsWithLocations.filter(s => s.grid);
+        console.log(`[RBN] Spots with locations: ${spotsWithGrid.length} out of ${spotsWithLocations.length}`);
+        
+        // Log which spots are missing locations
+        const spotsWithoutGrid = spotsWithLocations.filter(s => !s.grid);
+        if (spotsWithoutGrid.length > 0) {
+          console.warn(`[RBN] Spots MISSING locations (${spotsWithoutGrid.length}):`, 
+            spotsWithoutGrid.map(s => s.callsign).join(', '));
+        }
         
         setSpots(spotsWithLocations);
         
