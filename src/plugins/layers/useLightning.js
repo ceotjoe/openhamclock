@@ -875,7 +875,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null }) {
         } catch (e) {}
       }
     };
-  }, [map, enabled, lightningData]); // Add lightningData to retry when config loads
+  }, [map, enabled, proximityControl]); // Add proximityControl to prevent recreation
 
   // Update proximity panel content
   useEffect(() => {
