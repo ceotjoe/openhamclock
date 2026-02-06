@@ -1,6 +1,6 @@
 /**
  * useDXCluster Hook
- * Fetches and filters DX cluster spots with 30-minute retention
+ * Fetches and filters DX cluster spots with 30-minute default retention
  */
 import { useState, useEffect, useCallback } from 'react';
 import { getBandFromFreq, detectMode, getCallsignInfo } from '../utils/callsign.js';
@@ -18,68 +18,126 @@ export const useDXCluster = (source = 'auto', filters = {}) => {
   // Apply filters to spots
   const applyFilters = useCallback((spots, filters) => {
     if (!filters || Object.keys(filters).length === 0) return spots;
-    
+
+    /*
+     *  spot.spotter is the DE and spot.call is the DX
+     */
+
     return spots.filter(spot => {
-      // Get spotter info for origin-based filtering
+      // Get DE (spotter) info for origin-based filtering
       const spotterInfo = getCallsignInfo(spot.spotter);
-      
-      // Watchlist only mode - must match watchlist
+
+      // Get the DX (spot) info for destination exclusion
+      const dxInfo = getCallsignInfo(spot.call);
+
+      // Watchlist only mode - must match watchlist (filters DX)
       if (filters.watchlistOnly && filters.watchlist?.length > 0) {
         const matchesWatchlist = filters.watchlist.some(w => 
           spot.call?.toUpperCase().includes(w.toUpperCase())
         );
         if (!matchesWatchlist) return false;
       }
-      
-      // Exclude list - hide matching calls - match the call as a prefix
-      if (filters.excludeList?.length > 0) {
-        const isExcluded = filters.excludeList.some(exc =>
-          spot.call?.toUpperCase().startsWith(exc.toUpperCase())
-        );
-        if (isExcluded) return false;
+
+      /**
+       ** DE filters (from the 'Zones' tab)
+       **
+       */
+      // DE Continent 'include' filter - filter by SPOTTER's continent
+      if (filters.continents?.length > 0) {
+        if (!spotterInfo.continent || !filters.continents.includes(spotterInfo.continent)) {
+          return false;
+        }
       }
-      
-      // CQ Zone filter - filter by SPOTTER's zone
+
+      // DE CQ Zone 'include' filter - filter by SPOTTER's zone
       if (filters.cqZones?.length > 0) {
         if (!spotterInfo.cqZone || !filters.cqZones.includes(spotterInfo.cqZone)) {
           return false;
         }
       }
       
-      // ITU Zone filter
+      // DE ITU Zone 'include' filter by SPOTTERS's SPOTTER's Zone
       if (filters.ituZones?.length > 0) {
         if (!spotterInfo.ituZone || !filters.ituZones.includes(spotterInfo.ituZone)) {
           return false;
         }
       }
-      
-      // Continent filter - filter by SPOTTER's continent
-      if (filters.continents?.length > 0) {
-        if (!spotterInfo.continent || !filters.continents.includes(spotterInfo.continent)) {
+      // end DE filters
+
+
+      /**
+       ** Exclusion filters (from the 'Exclude' tab)
+       **
+       */
+      // DX (spot) Continent 'exclude' filter
+      if (filters.excludeContinents?.length > 0) {
+        if (dxInfo.continent && filters.excludeContinents.includes(dxInfo.continent)) {
           return false;
         }
       }
-      
-      // Band filter
+
+      // DX (spot) CQ Zone 'exclude' filter
+      if (filters.excludeCqZones?.length > 0) {
+        if (dxInfo.cqZone && filters.excludeCqZones.includes(dxInfo.cqZone)) {
+          return false;
+        }
+      }
+
+      // DX (spot) ITU Zone 'exclude' filter
+      if (filters.excludeItuZones?.length > 0) {
+        if (dxInfo.ituZone && !filters.excludeItuZones.includes(dxInfo.ituZone)) {
+          return false;
+        }
+      }
+
+      // DX (spot) Callsign 'exclude' filter
+      // hide matching calls - match the call as a prefix
+      if (filters.excludeDXCallList?.length > 0) {
+        const isExcluded = filters.excludeDXCallList.some(exc =>
+          spot.call?.toUpperCase().startsWith(exc.toUpperCase())
+        );
+        if (isExcluded) return false;
+      }
+
+      // DE (spotter) Callsign 'exclude' filter
+      // hide matching calls - match the call as a prefix
+      if (filters.excludeDECallList?.length > 0) {
+        const isExcluded = filters.excludeDECallList.some(exc =>
+          spot.spotter?.toUpperCase().startsWith(exc.toUpperCase())
+        );
+        if (isExcluded) return false;
+      }
+
+
+      /**
+       ** Band (from the 'Bands' tab)
+       **
+       */
       if (filters.bands?.length > 0) {
         const band = getBandFromFreq(parseFloat(spot.freq) * 1000);
         if (!filters.bands.includes(band)) return false;
       }
-      
-      // Mode filter
+
+      /**
+       ** Mode filters (from the 'Modes' tab)
+       **
+       */
       if (filters.modes?.length > 0) {
         const mode = detectMode(spot.comment);
         if (!mode || !filters.modes.includes(mode)) return false;
       }
-      
-      // Callsign search filter
+
+      /**
+       ** Callsign search filter (from the cluster list "Quick Search")
+       ** Include if either the DE (spotter) callsign or the DX (spot) callsign matches
+       **/
       if (filters.callsign && filters.callsign.trim()) {
         const search = filters.callsign.trim().toUpperCase();
         const matchesCall = spot.call?.toUpperCase().includes(search);
         const matchesSpotter = spot.spotter?.toUpperCase().includes(search);
         if (!matchesCall && !matchesSpotter) return false;
       }
-      
+
       return true;
     });
   }, []);

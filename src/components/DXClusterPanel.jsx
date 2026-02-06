@@ -20,15 +20,19 @@ export const DXClusterPanel = ({
 }) => {
   const getActiveFilterCount = () => {
     let count = 0;
+    if (filters?.continents?.length) count++;
     if (filters?.cqZones?.length) count++;
     if (filters?.ituZones?.length) count++;
-    if (filters?.continents?.length) count++;
     if (filters?.bands?.length) count++;
     if (filters?.modes?.length) count++;
     if (filters?.watchlist?.length) count++;
-    if (filters?.excludeList?.length) count++;
     if (filters?.callsign) count++;
     if (filters?.watchlistOnly) count++;
+    if (filters?.excludeContinents) count += filters.excludeContinents.length;
+    if (filters?.excludeCqZones) count += filters.excludeCqZones.length;
+    if (filters?.excludeItuZones) count += filters.excludeItuZones.length;
+    if (filters?.excludeCallList) count += filters.excludeCallList.length;
+
     return count;
   };
 
