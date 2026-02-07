@@ -14,8 +14,8 @@ import * as RBNPlugin from './layers/useRBN.js';
 import * as ContestQsosPlugin from './layers/useContestQsos.js';
 
 const layerPlugins = [
-  WXRadarPlugin,
   OWMCloudsPlugin,
+  WXRadarPlugin,
   EarthquakesPlugin,
   AuroraPlugin,
   WSPRPlugin,
