@@ -14,7 +14,7 @@ export const useDXClusterData = (filters = {}, config = {}) => {
   const lastFetchRef = useRef(0);
   
   const spotRetentionMs = (filters?.spotRetentionMinutes || 30) * 60 * 1000;
-  const pollInterval = config.lowMemoryMode ? 60000 : 30000; // 60s in low memory, 30s otherwise
+  const pollInterval = config.lowMemoryMode ? 120000 : 60000; // 120s in low memory, 60s otherwise - reduced to save bandwidth
 
   // Build query params for custom cluster settings
   const buildQueryParams = useCallback(() => {

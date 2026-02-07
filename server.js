@@ -1235,7 +1235,7 @@ app.get('/api/noaa/xray', async (req, res) => {
 });
 
 // NOAA OVATION Aurora Forecast
-const AURORA_CACHE_TTL = 10 * 60 * 1000; // 10 minutes (NOAA updates every ~30 min)
+const AURORA_CACHE_TTL = 30 * 60 * 1000; // 30 minutes (matches NOAA update frequency)
 app.get('/api/noaa/aurora', async (req, res) => {
   try {
     if (noaaCache.aurora.data && (Date.now() - noaaCache.aurora.timestamp) < AURORA_CACHE_TTL) {
@@ -3415,12 +3415,23 @@ function maintainRBNConnection(port = 7000) {
 // Start persistent connection on server startup
 maintainRBNConnection(7000);
 
+// Cache for RBN API responses
+let rbnApiCache = { data: null, timestamp: 0, key: '' };
+const RBN_API_CACHE_TTL = 30000; // 30 seconds - spots change constantly but not every request
+
 // Endpoint to get recent RBN spots (no filtering, just return all recent spots)
 app.get('/api/rbn/spots', async (req, res) => {
   const minutes = parseInt(req.query.minutes) || 30;
-  const limit = parseInt(req.query.limit) || 500;
+  const limit = parseInt(req.query.limit) || 200; // Reduced from 500 to save bandwidth
   
+  const cacheKey = `${minutes}:${limit}`;
   const now = Date.now();
+  
+  // Return cached response if fresh
+  if (rbnApiCache.data && rbnApiCache.key === cacheKey && (now - rbnApiCache.timestamp) < RBN_API_CACHE_TTL) {
+    return res.json(rbnApiCache.data);
+  }
+  
   const cutoff = now - (minutes * 60 * 1000);
   
   // Filter by time window
@@ -3480,13 +3491,18 @@ app.get('/api/rbn/spots', async (req, res) => {
   
   console.log(`[RBN] Returning ${enrichedSpots.length} enriched spots (last ${minutes} min)`);
   
-  res.json({
+  const response = {
     count: enrichedSpots.length,
     spots: enrichedSpots,
     minutes: minutes,
     timestamp: new Date().toISOString(),
     source: 'rbn-telnet-stream'
-  });
+  };
+  
+  // Cache the response
+  rbnApiCache = { data: response, timestamp: Date.now(), key: cacheKey };
+  
+  res.json(response);
 });
 
 // Endpoint to lookup skimmer location (cached permanently)

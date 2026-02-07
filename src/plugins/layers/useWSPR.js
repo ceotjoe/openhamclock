@@ -539,7 +539,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null, callsign,
     };
 
     fetchWSPR();
-    const interval = setInterval(fetchWSPR, 300000); // Poll every 5 minutes - be kind to PSKReporter
+    const interval = setInterval(fetchWSPR, 120000); // Poll every 2 minutes - be kind to PSKReporter
 
     return () => clearInterval(interval);
   }, [enabled, bandFilter, timeWindow, callsign, filterByGrid]);
