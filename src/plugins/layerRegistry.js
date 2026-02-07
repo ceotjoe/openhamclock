@@ -11,6 +11,7 @@ import * as GrayLinePlugin from './layers/useGrayLine.js';
 import * as LightningPlugin from './layers/useLightning.js';
 import * as RBNPlugin from './layers/useRBN.js';
 import * as ContestQsosPlugin from './layers/useContestQsos.js';
+import * as GreatCirclePlugin from './layers/useGreatCircle.js';
 
 const layerPlugins = [
   WXRadarPlugin,
@@ -22,6 +23,7 @@ const layerPlugins = [
   RBNPlugin,
   ContestQsosPlugin,
   N3FJPLoggedQSOsPlugin,
+  GreatCirclePlugin,
 ];
 
 // Memoize the layer list - it never changes at runtime
