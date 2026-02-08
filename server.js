@@ -391,8 +391,8 @@ const endpointStats = {
 
 // Middleware to track endpoint usage
 app.use('/api', (req, res, next) => {
-  // Skip health endpoint to avoid recursive tracking
-  if (req.path === '/health') return next();
+  // Skip health and version endpoints to avoid recursive/noisy tracking
+  if (req.path === '/health' || req.path === '/version') return next();
   
   const startTime = Date.now();
   let responseSize = 0;
@@ -6084,6 +6084,12 @@ app.get('/api/health', (req, res) => {
 // ============================================
 // CONFIGURATION ENDPOINT
 // ============================================
+
+// Lightweight version check (for auto-refresh polling)
+app.get('/api/version', (req, res) => {
+  res.set('Cache-Control', 'no-cache, no-store');
+  res.json({ version: APP_VERSION });
+});
 
 // Serve station configuration to frontend
 // This allows the frontend to get config from .env/config.json without exposing secrets

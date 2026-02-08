@@ -38,6 +38,7 @@ import useTimeState from './hooks/app/useTimeState';
 import useFullscreen from './hooks/app/useFullscreen';
 import useResponsiveScale from './hooks/app/useResponsiveScale';
 import useLocalInstall from './hooks/app/useLocalInstall';
+import useVersionCheck from './hooks/app/useVersionCheck';
 
 const App = () => {
   const { t } = useTranslation();
@@ -123,6 +124,7 @@ const App = () => {
   const { isFullscreen, handleFullscreenToggle } = useFullscreen();
   const scale = useResponsiveScale();
   const isLocalInstall = useLocalInstall();
+  useVersionCheck();
 
   // Data hooks
   const spaceWeather = useSpaceWeather();

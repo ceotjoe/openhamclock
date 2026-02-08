@@ -155,52 +155,56 @@ export const Header = ({
 
       {/* Settings & Fullscreen Buttons */}
       <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-        <a
-          href="https://buymeacoffee.com/k0cjh"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            background: 'linear-gradient(135deg, #ff813f 0%, #ffdd00 100%)',
-            border: 'none',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            color: '#000',
-            fontSize: '12px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            textDecoration: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px',
-            whiteSpace: 'nowrap'
-          }}
-          title="Buy me a coffee!"
-        >
-          ☕ Donate
-        </a>
-        <a
-          href="https://www.paypal.com/donate/?hosted_button_id=MMYPQBLA6SW68"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            background: 'linear-gradient(135deg, #0070ba 0%, #003087 100%)',
-            border: 'none',
-            padding: '6px 10px',
-            borderRadius: '4px',
-            color: '#fff',
-            fontSize: '12px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            textDecoration: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '3px',
-            whiteSpace: 'nowrap'
-          }}
-          title="Donate via PayPal"
-        >
-          💳 PayPal
-        </a>
+        {!isFullscreen && (
+          <>
+            <a
+              href="https://buymeacoffee.com/k0cjh"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'linear-gradient(135deg, #ff813f 0%, #ffdd00 100%)',
+                border: 'none',
+                padding: '6px 10px',
+                borderRadius: '4px',
+                color: '#000',
+                fontSize: '12px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                whiteSpace: 'nowrap'
+              }}
+              title="Buy me a coffee!"
+            >
+              ☕ Donate
+            </a>
+            <a
+              href="https://www.paypal.com/donate/?hosted_button_id=MMYPQBLA6SW68"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'linear-gradient(135deg, #0070ba 0%, #003087 100%)',
+                border: 'none',
+                padding: '6px 10px',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '12px',
+                cursor: 'pointer',
+                fontWeight: '600',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+                whiteSpace: 'nowrap'
+              }}
+              title="Donate via PayPal"
+            >
+              💳 PayPal
+            </a>
+          </>
+        )}
         {showUpdateButton && (
           <button
             onClick={onUpdateClick}

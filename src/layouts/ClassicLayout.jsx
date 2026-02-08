@@ -437,26 +437,28 @@ export default function ClassicLayout(props) {
 
         {/* Controls */}
         <div style={{ display: 'flex', gap: '4px' }}>
-          <a
-            href="https://www.paypal.com/donate/?hosted_button_id=MMYPQBLA6SW68"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              background: 'linear-gradient(135deg, #0070ba 0%, #003087 100%)',
-              border: 'none',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              color: '#fff',
-              fontSize: '11px',
-              fontWeight: '600',
-              textDecoration: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-            title={t('app.donate.paypal')}
-          >💳</a>
+          {!isFullscreen && (
+            <a
+              href="https://www.paypal.com/donate/?hosted_button_id=MMYPQBLA6SW68"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'linear-gradient(135deg, #0070ba 0%, #003087 100%)',
+                border: 'none',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '11px',
+                fontWeight: '600',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+              title={t('app.donate.paypal')}
+            >💳</a>
+          )}
           <button
             onClick={() => setShowSettings(true)}
             style={{
@@ -715,25 +717,27 @@ export default function ClassicLayout(props) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <a
-              href="https://www.paypal.com/donate/?hosted_button_id=MMYPQBLA6SW68"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: 'linear-gradient(135deg, #0070ba 0%, #003087 100%)',
-                border: 'none',
-                padding: '6px 10px',
-                borderRadius: '4px',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: '600',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                cursor: 'pointer'
-              }}
-              title={t('app.donate.paypal')}
-            >💳</a>
+            {!isFullscreen && (
+              <a
+                href="https://www.paypal.com/donate/?hosted_button_id=MMYPQBLA6SW68"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  background: 'linear-gradient(135deg, #0070ba 0%, #003087 100%)',
+                  border: 'none',
+                  padding: '6px 10px',
+                  borderRadius: '4px',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer'
+                }}
+                title={t('app.donate.paypal')}
+              >💳</a>
+            )}
             <button
               onClick={() => setShowSettings(true)}
               style={{
