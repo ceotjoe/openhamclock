@@ -36,7 +36,7 @@ export const DEFAULT_LAYOUT = {
               { type: 'tab', name: 'DX Target', component: 'dx-location', id: 'dx-location-tab' }
             ]
           },
-         {
+          {
             type: 'tabset',
             weight: 50,
             id: 'left-bottom-tabset',
@@ -100,6 +100,8 @@ export const PANEL_DEFINITIONS = {
   'pota': { name: 'POTA', icon: '🏕️', description: 'Parks on the Air activators' },
   'contests': { name: 'Contests', icon: '🏆', description: 'Upcoming and active contests' },
   'world-map': { name: 'World Map', icon: '🗺️', description: 'Interactive world map' },
+  'rig-control': { name: 'Rig Control', icon: '📻', description: 'Transceiver control and feedback' },
+  'on-air': { name: 'On Air', icon: '🔴', description: 'Large TX status indicator' },
 };
 
 // Load layout from localStorage
