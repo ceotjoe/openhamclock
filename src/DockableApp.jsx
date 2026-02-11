@@ -11,6 +11,7 @@ import {
   WorldMap,
   DXClusterPanel,
   POTAPanel,
+  SOTAPanel,
   ContestPanel,
   SolarPanel,
   PropagationPanel,
@@ -64,6 +65,7 @@ export const DockableApp = ({
   // Spots & data
   dxClusterData,
   potaSpots,
+  sotaSpots,
   mySpots,
   dxpeditions,
   contests,
@@ -86,6 +88,7 @@ export const DockableApp = ({
   toggleDXPaths,
   toggleDXLabels,
   togglePOTA,
+  toggleSOTA,
   toggleSatellites,
   togglePSKReporter,
   toggleWSJTX,
@@ -183,6 +186,7 @@ export const DockableApp = ({
     'psk-reporter': { name: 'PSK Reporter', icon: '📡' },
     'dxpeditions': { name: 'DXpeditions', icon: '🏝️' },
     'pota': { name: 'POTA', icon: '🏕️' },
+    'sota': { name: 'SOTA', icon: '⛰️' },
     'contests': { name: 'Contests', icon: '🏆' },
     'ambient': { name: 'Ambient Weather', icon: '🌦️' },
   }), []);
@@ -278,6 +282,7 @@ export const DockableApp = ({
         onDXChange={handleDXChange}
         dxLocked={dxLocked}
         potaSpots={potaSpots.data}
+        sotaSpots={sotaSpots.data}
         mySpots={mySpots.data}
         dxPaths={dxClusterData.paths}
         dxFilters={dxFilters}
@@ -287,6 +292,7 @@ export const DockableApp = ({
         showDXLabels={mapLayers.showDXLabels}
         onToggleDXLabels={toggleDXLabels}
         showPOTA={mapLayers.showPOTA}
+        showSOTA={mapLayers.showSOTA}
         showSatellites={mapLayers.showSatellites}
         showPSKReporter={mapLayers.showPSKReporter}
         wsjtxSpots={wsjtxMapSpots}
@@ -429,6 +435,10 @@ export const DockableApp = ({
         content = <POTAPanel data={potaSpots.data} loading={potaSpots.loading} showOnMap={mapLayers.showPOTA} onToggleMap={togglePOTA} />;
         break;
 
+      case 'sota':
+        content = <SOTAPanel data={sotaSpots.data} loading={sotaSpots.loading} showOnMap={mapLayers.showSOTA} onToggleMap={toggleSOTA} />;
+        break;
+
       case 'contests':
         content = <ContestPanel data={contests.data} loading={contests.loading} />;
         break;
@@ -466,10 +476,10 @@ export const DockableApp = ({
     return content;
   }, [
     config, deGrid, dxGrid, dxLocation, deSunTimes, dxSunTimes, showDxWeather, tempUnit, localWeather, dxWeather, solarIndices,
-    propagation, bandConditions, dxClusterData, dxFilters, hoveredSpot, mapLayers, potaSpots,
+    propagation, bandConditions, dxClusterData, dxFilters, hoveredSpot, mapLayers, potaSpots, sotaSpots,
     mySpots, satellites, filteredSatellites, filteredPskSpots, wsjtxMapSpots, dxpeditions, contests,
     pskFilters, wsjtx, handleDXChange, setDxFilters, setShowDXFilters, setShowPSKFilters,
-    setHoveredSpot, toggleDXPaths, toggleDXLabels, togglePOTA, toggleSatellites, togglePSKReporter, toggleWSJTX,
+    setHoveredSpot, toggleDXPaths, toggleDXLabels, togglePOTA, toggleSOTA, toggleSatellites, togglePSKReporter, toggleWSJTX,
     dxLocked, handleToggleDxLock, panelZoom
   ]);
 

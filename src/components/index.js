@@ -9,6 +9,8 @@ export { SpaceWeatherPanel } from './SpaceWeatherPanel.jsx';
 export { BandConditionsPanel } from './BandConditionsPanel.jsx';
 export { DXClusterPanel } from './DXClusterPanel.jsx';
 export { POTAPanel } from './POTAPanel.jsx';
+export { SOTAPanel } from './SOTAPanel.jsx';
+export { PotaSotaPanel } from './PotaSotaPanel.jsx';
 export { ContestPanel } from './ContestPanel.jsx';
 export { LocationPanel } from './LocationPanel.jsx';
 export { SettingsPanel } from './SettingsPanel.jsx';

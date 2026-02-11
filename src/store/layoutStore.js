@@ -77,6 +77,7 @@ export const DEFAULT_LAYOUT = {
             children: [
               { type: 'tab', name: 'DXpeditions', component: 'dxpeditions', id: 'dxpeditions-tab' },
               { type: 'tab', name: 'POTA', component: 'pota', id: 'pota-tab' },
+              { type: 'tab', name: 'SOTA', component: 'sota', id: 'sota-tab' },
               { type: 'tab', name: 'Contests', component: 'contests', id: 'contests-tab' }
             ]
           }
@@ -98,6 +99,7 @@ export const PANEL_DEFINITIONS = {
   'psk-reporter': { name: 'PSK Reporter', icon: '📡', description: 'Digital mode spots and WSJT-X' },
   'dxpeditions': { name: 'DXpeditions', icon: '🏝️', description: 'Upcoming DXpeditions' },
   'pota': { name: 'POTA', icon: '🏕️', description: 'Parks on the Air activators' },
+  'sota': { name: 'SOTA', icon: '⛰️', description: 'Summits on the Air activators' },
   'contests': { name: 'Contests', icon: '🏆', description: 'Upcoming and active contests' },
   'world-map': { name: 'World Map', icon: '🗺️', description: 'Interactive world map' },
 };

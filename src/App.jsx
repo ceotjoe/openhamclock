@@ -18,6 +18,7 @@ import {
   useBandConditions,
   useDXClusterData,
   usePOTASpots,
+  useSOTASpots,
   useContests,
   useWeather,
   usePropagation,
@@ -109,6 +110,7 @@ const App = () => {
     toggleDXPaths,
     toggleDXLabels,
     togglePOTA,
+    toggleSOTA,
     toggleSatellites,
     togglePSKReporter,
     toggleWSJTX,
@@ -132,6 +134,7 @@ const App = () => {
   const bandConditions = useBandConditions();
   const solarIndices = useSolarIndices();
   const potaSpots = usePOTASpots();
+  const sotaSpots = useSOTASpots();
   const dxClusterData = useDXClusterData(dxFilters, config);
   const dxpeditions = useDXpeditions();
   const contests = useContests();
@@ -259,6 +262,7 @@ const App = () => {
     propagation,
     dxClusterData,
     potaSpots,
+    sotaSpots,
     mySpots,
     dxpeditions,
     contests,
@@ -275,6 +279,7 @@ const App = () => {
     toggleDXPaths,
     toggleDXLabels,
     togglePOTA,
+    toggleSOTA,
     toggleSatellites,
     togglePSKReporter,
     toggleWSJTX,
