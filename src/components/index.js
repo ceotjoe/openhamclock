@@ -28,3 +28,4 @@ export { default as BandHealthPanel } from './BandHealthPanel.jsx';
 export { default as RigControlPanel } from './RigControlPanel.jsx';
 export { default as OnAirPanel } from './OnAirPanel.jsx';
 export { IDTimerPanel } from './IDTimerPanel.jsx';
+export { default as SatellitePanel } from './SatellitePanel.jsx';

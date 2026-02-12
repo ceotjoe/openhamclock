@@ -23,7 +23,8 @@ import {
   AnalogClockPanel,
   RigControlPanel,
   OnAirPanel,
-  IDTimerPanel
+  IDTimerPanel,
+  SatellitePanel
 } from './components';
 
 import { loadLayout, saveLayout, DEFAULT_LAYOUT } from './store/layoutStore.js';
@@ -225,6 +226,7 @@ export const DockableApp = ({
     'rig-control': { name: 'Rig Control', icon: '📻' },
     'on-air': { name: 'On Air', icon: '🔴' },
     'id-timer': { name: 'ID Timer', icon: '📢' },
+    'satellite-tracker': { name: 'Satellite Tracker', icon: '🛰️' },
   }), []);
 
   // Add panel
@@ -493,6 +495,10 @@ export const DockableApp = ({
 
       case 'id-timer':
         content = <IDTimerPanel callsign={config.callsign} />;
+        break;
+
+      case 'satellite-tracker':
+        content = <SatellitePanel config={config} />;
         break;
 
       default:

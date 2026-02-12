@@ -57,12 +57,12 @@ export const useSatellites = (observerLocation) => {
         try {
           const satrec = satellite.twoline2satrec(line1, line2);
           const positionAndVelocity = satellite.propagate(satrec, now);
-          
+
           if (!positionAndVelocity.position) return;
 
           const gmst = satellite.gstime(now);
           const positionGd = satellite.eciToGeodetic(positionAndVelocity.position, gmst);
-          
+
           // Convert to degrees
           const lat = satellite.degreesLat(positionGd.latitude);
           const lon = satellite.degreesLong(positionGd.longitude);
@@ -83,11 +83,11 @@ export const useSatellites = (observerLocation) => {
           const track = [];
           const trackMinutes = 90;
           const stepMinutes = 1;
-          
-          for (let m = -trackMinutes/2; m <= trackMinutes/2; m += stepMinutes) {
+
+          for (let m = -trackMinutes / 2; m <= trackMinutes / 2; m += stepMinutes) {
             const trackTime = new Date(now.getTime() + m * 60 * 1000);
             const trackPV = satellite.propagate(satrec, trackTime);
-            
+
             if (trackPV.position) {
               const trackGmst = satellite.gstime(trackTime);
               const trackGd = satellite.eciToGeodetic(trackPV.position, trackGmst);
@@ -96,7 +96,7 @@ export const useSatellites = (observerLocation) => {
               track.push([trackLat, trackLon]);
             }
           }
-          
+
           // Calculate footprint radius (visibility circle)
           // Formula: radius = Earth_radius * arccos(Earth_radius / (Earth_radius + altitude))
           const earthRadius = 6371; // km
@@ -115,7 +115,16 @@ export const useSatellites = (observerLocation) => {
             track,
             footprintRadius: Math.round(footprintRadius),
             mode: tle.mode || 'Unknown',
-            color: tle.color || '#00ffff'
+            color: tle.color || '#00ffff',
+            // Frequency Data (from Palewire/Server)
+            downlink: tle.downlink,
+            uplink: tle.uplink,
+            beacon: tle.beacon,
+            callsign: tle.callsign,
+            // Raw TLE for Doppler calc
+            tle1: line1,
+            tle2: line2,
+            norad: tle.norad
           });
         } catch (e) {
           // Skip satellites with invalid TLE

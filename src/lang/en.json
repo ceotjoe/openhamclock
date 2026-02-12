@@ -357,5 +357,22 @@
   "propagation.source.general": "General conditions for all paths",
   "propagation.estimated": "estimated",
   "propagation.heatmap.tooltip.voacap": "Switch to VOACAP heatmap colors (red=good)",
-  "propagation.heatmap.tooltip.stoplight": "Switch to stoplight colors (green=good)"
+  "propagation.heatmap.tooltip.stoplight": "Switch to stoplight colors (green=good)",
+  "satellite.panel.title": "Satellite Tracker",
+  "satellite.panel.visibleOnly": "Visible Only",
+  "satellite.panel.select": "-- Select Satellite --",
+  "satellite.panel.azimuth": "Azimuth:",
+  "satellite.panel.elevation": "Elevation:",
+  "satellite.panel.range": "Range:",
+  "satellite.panel.rate": "Rate:",
+  "satellite.panel.radioControl": "Radio Control",
+  "satellite.panel.doppler": "DOPPLER",
+  "satellite.panel.rigDisconnected": "Rig Disconnected",
+  "satellite.panel.downlink": "Downlink:",
+  "satellite.panel.uplink": "Uplink:",
+  "satellite.panel.transverterOffset": "Transverter Offset (Hz):",
+  "satellite.panel.tuneCenter": "TUNE CENTER",
+  "satellite.panel.nextPass": "Next Pass:",
+  "satellite.panel.calculating": "Calculating...",
+  "satellite.panel.placeholder": "Select a satellite to begin tracking"
 }
