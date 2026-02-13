@@ -119,6 +119,7 @@ export const useSatellites = (observerLocation) => {
             // Frequency Data (from Palewire/Server)
             downlink: tle.downlink,
             uplink: tle.uplink,
+            frequencies: tle.frequencies,
             beacon: tle.beacon,
             callsign: tle.callsign,
             // Raw TLE for Doppler calc
