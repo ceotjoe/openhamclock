@@ -28,6 +28,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
 const mqttLib = require('mqtt');
+const { initCtyData, getCtyData, lookupCall } = require('./src/server/ctydat.js');
 
 // Read version from package.json as single source of truth
 const APP_VERSION = (() => {
@@ -4166,6 +4167,20 @@ function estimateLocationFromPrefix(callsign) {
     }
   }
   
+  // Fallback: try cty.dat database (has lat/lon for every DXCC entity)
+  const ctyResult = lookupCall(callsign);
+  if (ctyResult && ctyResult.lat != null && ctyResult.lon != null) {
+    return {
+      callsign,
+      lat: ctyResult.lat,
+      lon: ctyResult.lon,
+      grid: null,
+      country: ctyResult.entity || 'Unknown',
+      estimated: true,
+      source: 'prefix'
+    };
+  }
+
   // Fallback to first character (most likely country for each letter)
   const firstCharGrids = {
     'A': 'EM79', 'B': 'PL02', 'C': 'FN03', 'D': 'JO51', 'E': 'IO63', // A=USA (AA-AL), B=China, C=Canada, D=Germany, E=Spain/Ireland
@@ -6537,15 +6552,15 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
   const muf = calculateMUF(distance, midLat, midLon, hour, sfi, ssn, hourIonoData);
   const luf = calculateLUF(distance, midLat, hour, sfi, kIndex);
   
-  // Apply signal margin from mode + power
-  // Positive margin (e.g. FT8 or high power) effectively widens the usable window:
-  //   - Extends effective MUF (weak-signal modes can decode signals near/above MUF)
+  // Apply signal margin from mode + power to MUF/LUF boundaries.
+  // Positive margin (e.g. FT8 or high power) widens the usable window:
+  //   - Extends effective MUF (more power/sensitivity can use marginal propagation)
   //   - Reduces effective LUF (more power overcomes D-layer absorption)
-  // Each dB of margin extends MUF by ~1.2% and reduces LUF by ~0.8%
-  const effectiveMuf = muf * (1 + signalMarginDb * 0.012);
-  const effectiveLuf = luf * Math.max(0.1, 1 - signalMarginDb * 0.008);
+  // Scale: ~2% per dB for MUF, ~1.5% per dB for LUF
+  const effectiveMuf = muf * (1 + signalMarginDb * 0.020);
+  const effectiveLuf = luf * Math.max(0.1, 1 - signalMarginDb * 0.015);
   
-  // Calculate reliability based on frequency position relative to effective MUF/LUF
+  // Calculate BASE reliability from frequency position relative to effective MUF/LUF
   let reliability = 0;
   
   if (freq > effectiveMuf * 1.1) {
@@ -6580,6 +6595,32 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
         // Above OWF - reliability decreases as we approach MUF
         reliability = 95 - ((position - optimalPosition) / (1 - optimalPosition)) * 45;
       }
+    }
+  }
+  
+  // ── Power/mode signal margin: direct effect on reliability ──
+  // In real propagation, more power = higher received SNR = better probability
+  // of maintaining a link. A marginal path (30% reliability) at 100W SSB becomes
+  // much more reliable at 1000W, and much worse at 5W.
+  //
+  // signalMarginDb: 0 at SSB/100W, +10 at SSB/1000W, -13 at SSB/5W, +34 at FT8/100W
+  //
+  // Apply as a sigmoid-shaped boost/penalty centered on the baseline reliability.
+  // Positive margin pushes reliability toward 99, negative pushes toward 0.
+  if (signalMarginDb !== 0 && reliability > 0 && reliability < 99) {
+    // Convert dB margin to a reliability shift.
+    // Each 10 dB roughly doubles (or halves) the chance of a usable link.
+    // Use logistic scaling so we don't exceed 0-99 bounds.
+    const marginFactor = signalMarginDb / 15; // normalized: ±1 at ±15dB
+    
+    if (marginFactor > 0) {
+      // Boost: push toward 99. Marginal paths benefit most.
+      const headroom = 99 - reliability;
+      reliability += headroom * (1 - Math.exp(-marginFactor * 1.2));
+    } else {
+      // Penalty: push toward 0. Good paths degrade.
+      const room = reliability;
+      reliability -= room * (1 - Math.exp(marginFactor * 1.2));
     }
   }
   
@@ -9076,6 +9117,30 @@ app.get('/api/wsjtx/relay/download/:platform', (req, res) => {
 // CONTEST LOGGER UDP + API (N1MM / DXLog)
 // ============================================
 
+// ── CTY.DAT — DXCC Entity Database ────────────────────────
+// Serves the parsed cty.dat prefix → entity lookup for client-side callsign identification.
+// Data from country-files.com (AD1C), refreshed every 24h.
+
+app.get('/api/cty', (req, res) => {
+  const data = getCtyData();
+  if (!data) {
+    return res.status(503).json({ error: 'CTY data not yet loaded' });
+  }
+  // Long cache — data only changes every few weeks upstream
+  res.set('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+  res.json(data);
+});
+
+// Lightweight single-call lookup (avoids sending full 200KB+ database to client)
+app.get('/api/cty/lookup/:call', (req, res) => {
+  const result = lookupCall(req.params.call);
+  if (!result) {
+    return res.status(404).json({ error: 'Unknown callsign prefix' });
+  }
+  res.set('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+  res.json(result);
+});
+
 // ── RIG LISTENER DOWNLOAD ─────────────────────────────────
 // Serves the rig-listener.js agent and generates one-click launcher scripts
 // that auto-download portable Node.js + serialport. User double-clicks → wizard runs.
@@ -9656,6 +9721,14 @@ if (N1MM_ENABLED) {
   console.log('');
 
   startAutoUpdateScheduler();
+  
+  // Load DXCC entity database (cty.dat) — async, non-blocking
+  initCtyData().then(() => {
+    const data = getCtyData();
+    if (data) {
+      console.log(`  📡 CTY database: ${data.entities.length} entities, ${Object.keys(data.prefixes).length} prefixes`);
+    }
+  }).catch(() => {});
   
   // Check for outdated systemd service file that prevents auto-update restart
   if (AUTO_UPDATE_ENABLED && (process.env.INVOCATION_ID || process.ppid === 1)) {
