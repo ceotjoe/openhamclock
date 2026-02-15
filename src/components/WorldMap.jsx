@@ -81,7 +81,7 @@ export const WorldMap = ({
   const satTracksRef = useRef([]);
   const pskMarkersRef = useRef([]);
   const wsjtxMarkersRef = useRef([]);
-  const countriesLayerRef = useRef(null);
+  const countriesLayerRef = useRef([]);
   const dxLockedRef = useRef(dxLocked);
 
   // Calculate grid locator from DE location for plugins
@@ -342,8 +342,8 @@ export const WorldMap = ({
     }
     
     // If you have a countries overlay, ensure it stays visible
-    if (countriesLayerRef.current) {
-      countriesLayerRef.current.bringToFront();
+    if (countriesLayerRef.current?.length) {
+      countriesLayerRef.current.forEach(l => { try { l.bringToFront(); } catch(e) {} });
     }
 
     // 4. Handle Clipping Mask
@@ -373,11 +373,11 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
     
-    // Remove existing countries layer
-    if (countriesLayerRef.current) {
-      map.removeLayer(countriesLayerRef.current);
-      countriesLayerRef.current = null;
-    }
+    // Remove existing countries layers (all world copies)
+    countriesLayerRef.current.forEach(layer => {
+      try { map.removeLayer(layer); } catch (e) {}
+    });
+    countriesLayerRef.current = [];
     
     // Only add overlay for countries style
     if (!MAP_STYLES[mapStyle]?.countriesOverlay) return;
@@ -401,6 +401,29 @@ export const WorldMap = ({
       return COLORS[Math.abs(hash) % COLORS.length];
     };
     
+    // Deep-shift all coordinates in a GeoJSON geometry by a longitude offset
+    const shiftCoords = (coords, offset) => {
+      if (typeof coords[0] === 'number') {
+        // [lon, lat] point
+        return [coords[0] + offset, coords[1]];
+      }
+      return coords.map(c => shiftCoords(c, offset));
+    };
+    
+    const shiftGeoJSON = (geojson, offset) => {
+      if (offset === 0) return geojson;
+      return {
+        ...geojson,
+        features: geojson.features.map(f => ({
+          ...f,
+          geometry: {
+            ...f.geometry,
+            coordinates: shiftCoords(f.geometry.coordinates, offset)
+          }
+        }))
+      };
+    };
+    
     // Fetch world countries GeoJSON (Natural Earth 110m simplified, ~240KB)
     fetch('https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json')
       .then(res => {
@@ -410,30 +433,39 @@ export const WorldMap = ({
       .then(geojson => {
         if (!mapInstanceRef.current) return;
         
-        countriesLayerRef.current = L.geoJSON(geojson, {
-          style: (feature) => {
-            const name = feature.properties?.name || feature.id || 'Unknown';
-            return {
-              fillColor: hashColor(name),
-              fillOpacity: 0.65,
-              color: '#fff',
-              weight: 1,
-              opacity: 0.8
-            };
-          },
-          onEachFeature: (feature, layer) => {
-            const name = feature.properties?.name || 'Unknown';
-            layer.bindTooltip(name, {
-              sticky: true,
-              className: 'country-tooltip',
-              direction: 'top',
-              offset: [0, -5]
-            });
-          }
-        }).addTo(map);
+        const styleFunc = (feature) => {
+          const name = feature.properties?.name || feature.id || 'Unknown';
+          return {
+            fillColor: hashColor(name),
+            fillOpacity: 0.65,
+            color: '#fff',
+            weight: 1,
+            opacity: 0.8
+          };
+        };
         
-        // Ensure countries layer is below markers but above tiles
-        countriesLayerRef.current.bringToBack();
+        // Create 3 world copies: left (-360), center (0), right (+360)
+        for (const offset of [-360, 0, 360]) {
+          const shifted = shiftGeoJSON(geojson, offset);
+          const layer = L.geoJSON(shifted, {
+            style: styleFunc,
+            // Only add tooltips to center copy to avoid duplicates
+            onEachFeature: offset === 0 ? (feature, layer) => {
+              const name = feature.properties?.name || 'Unknown';
+              layer.bindTooltip(name, {
+                sticky: true,
+                className: 'country-tooltip',
+                direction: 'top',
+                offset: [0, -5]
+              });
+            } : undefined
+          }).addTo(map);
+          
+          countriesLayerRef.current.push(layer);
+        }
+        
+        // Ensure countries layers are below markers but above tiles
+        countriesLayerRef.current.forEach(l => l.bringToBack());
         // Put tile layer behind countries
         if (tileLayerRef.current) tileLayerRef.current.bringToBack();
         // Terminator on top

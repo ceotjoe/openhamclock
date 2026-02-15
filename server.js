@@ -45,6 +45,10 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 1000);
 });
 process.on('unhandledRejection', (reason) => {
+  // AbortErrors are benign — just fetch timeouts firing after the request context ended
+  if (reason && (reason.name === 'AbortError' || (typeof reason === 'string' && reason.includes('AbortError')))) {
+    return; // Silently ignore — these are expected during upstream slowdowns
+  }
   console.error(`[WARN] Unhandled rejection: ${reason}`);
 });
 
@@ -481,6 +485,9 @@ const errorLogState = {};
 const ERROR_LOG_INTERVAL = 5 * 60 * 1000; // Only log same error once per 5 minutes
 
 function logErrorOnce(category, message) {
+  // Suppress AbortError messages — these are just fetch timeouts, not real errors
+  if (message && (message.includes('aborted') || message.includes('AbortError'))) return false;
+  
   const key = `${category}:${message}`;
   const now = Date.now();
   const lastLogged = errorLogState[key] || 0;
@@ -2567,11 +2574,13 @@ app.get('/api/dxcluster/paths', async (req, res) => {
       return res.json(validPaths.slice(0, 50));
     }
     
-    // Get unique callsigns to look up
+    // Get unique callsigns to look up (sanitize to remove angle brackets from DX cluster data)
     const allCalls = new Set();
     newSpots.forEach(s => {
-      allCalls.add(s.spotter);
-      allCalls.add(s.dxCall);
+      const spotter = (s.spotter || '').replace(/[<>]/g, '').trim();
+      const dxCall = (s.dxCall || '').replace(/[<>]/g, '').trim();
+      if (spotter) allCalls.add(spotter);
+      if (dxCall) allCalls.add(dxCall);
     });
     
     // Look up prefix-based locations for all callsigns (includes grid squares!)
@@ -2616,7 +2625,11 @@ app.get('/api/dxcluster/paths', async (req, res) => {
     if (hamqthMisses.length > 0) {
       const batch = hamqthMisses.slice(0, 10);
       logDebug('[DX Paths] Background HamQTH lookup for', batch.length, 'callsigns');
-      for (const call of batch) {
+      for (const rawCall of batch) {
+        // Sanitize and validate before hitting external API
+        const call = rawCall.replace(/[<>]/g, '').trim();
+        if (!call || !/^[A-Z0-9\/\-]{1,20}$/.test(call)) continue;
+        
         // Fire-and-forget — results land in callsignLookupCache for next poll
         fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(call)}`, {
           headers: { 'User-Agent': 'OpenHamClock/' + APP_VERSION },
@@ -2794,7 +2807,8 @@ const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 // Simple callsign to grid/location lookup using HamQTH
 app.get('/api/callsign/:call', async (req, res) => {
-  const callsign = req.params.call.toUpperCase();
+  // Strip angle brackets and other junk that can arrive from DX cluster data
+  const callsign = req.params.call.replace(/[<>]/g, '').toUpperCase().trim();
   const now = Date.now();
   
   // Check cache first
@@ -2812,7 +2826,9 @@ app.get('/api/callsign/:call', async (req, res) => {
     if (!/^[A-Z0-9\/\-]{1,20}$/.test(callsign)) {
       return res.status(400).json({ error: 'Invalid callsign format' });
     }
-    const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`);
+    const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`, {
+      signal: AbortSignal.timeout(8000)
+    });
     if (response.ok) {
       const text = await response.text();
       
@@ -2850,7 +2866,15 @@ app.get('/api/callsign/:call', async (req, res) => {
     
     res.status(404).json({ error: 'Callsign not found' });
   } catch (error) {
-    logErrorOnce('Callsign Lookup', error.message);
+    if (error.name !== 'AbortError') {
+      logErrorOnce('Callsign Lookup', error.message);
+    }
+    // Still try prefix estimate on timeout/failure
+    const estimated = estimateLocationFromPrefix(callsign);
+    if (estimated) {
+      callsignLookupCache.set(callsign, { data: estimated, timestamp: now });
+      return res.json(estimated);
+    }
     res.status(500).json({ error: 'Lookup failed' });
   }
 });
@@ -3734,7 +3758,9 @@ app.get('/api/myspots/:callsign', async (req, res) => {
     
     res.json(spotsWithLocations);
   } catch (error) {
-    logErrorOnce('My Spots', error.message);
+    if (error.name !== 'AbortError') {
+      logErrorOnce('My Spots', error.message);
+    }
     res.json([]);
   }
 });
@@ -7913,7 +7939,7 @@ function handleWSJTXMessage(msg, state) {
                   timestamp: Date.now()
                 });
               }
-            }).finally(() => { wsjtxHamqthInflight.delete(targetCall); });
+            }).catch(() => {}).finally(() => { wsjtxHamqthInflight.delete(targetCall); });
           }
         }
       }
