@@ -12,7 +12,12 @@
     "timeout": 5000,
     "tuneDelay": 3000,
     "pttEnabled": false,
-    "_comment": "Set type to 'rigctld' (TCP), 'flrig' (XML-RPC), or 'mock' (Simulation)"
+    "_comment": "Set type to 'rigctld' (TCP), 'flrig' (XML-RPC), 'flexradio' (SmartSDR API), or 'mock' (Simulation)",
+    "flexradio": {
+      "slice": 0,
+      "clientName": "OpenHamClock",
+      "_comment": "FlexRadio specific: slice 0-7, clientName for identification"
+    }
   },
   "rotator": {
     "enabled": false,

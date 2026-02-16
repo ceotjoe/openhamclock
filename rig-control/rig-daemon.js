@@ -14,6 +14,7 @@ const express = require("express");
 const cors = require("cors");
 const net = require("net");
 const xmlrpc = require("xmlrpc");
+const FlexRadioClient = require("./lib/flexradio");
 
 // Configuration Defaults
 const fs = require("fs");
@@ -332,6 +333,127 @@ const FlrigAdapter = {
 };
 
 // ==========================================
+// ADAPTER: FLEXRADIO (SmartSDR API)
+// ==========================================
+const FlexRadioAdapter = {
+  client: null,
+
+  init: () => {
+    console.log('[FlexRadio] Initializing FlexRadio SmartSDR API...');
+    FlexRadioAdapter.client = new FlexRadioClient(CONFIG);
+
+    // Setup event handlers
+    FlexRadioAdapter.client.on('connected', () => {
+      console.log('[FlexRadio] Connected to radio');
+      state.connected = true;
+      broadcast({ type: 'update', prop: 'connected', value: true });
+    });
+
+    FlexRadioAdapter.client.on('disconnected', () => {
+      console.log('[FlexRadio] Disconnected from radio');
+      state.connected = false;
+      broadcast({ type: 'update', prop: 'connected', value: false });
+    });
+
+    FlexRadioAdapter.client.on('status', (status) => {
+      // Update state from status
+      const newFreq = Math.round(status.frequency);
+      if (newFreq !== state.freq) {
+        state.freq = newFreq;
+        broadcast({ type: 'update', prop: 'freq', value: state.freq });
+      }
+
+      const newMode = FlexRadioAdapter.mapMode(status.mode);
+      if (newMode !== state.mode) {
+        state.mode = newMode;
+        broadcast({ type: 'update', prop: 'mode', value: state.mode });
+      }
+
+      if (status.tx !== state.ptt) {
+        state.ptt = status.tx;
+        broadcast({ type: 'update', prop: 'ptt', value: state.ptt });
+      }
+
+      state.lastUpdate = Date.now();
+    });
+
+    FlexRadioAdapter.client.on('error', (err) => {
+      console.error('[FlexRadio] Error:', err.message);
+    });
+
+    // Connect to radio
+    FlexRadioAdapter.client.connect();
+  },
+
+  mapMode: (flexMode) => {
+    // Map FlexRadio modes to standard modes
+    const modeMap = {
+      'USB': 'USB',
+      'LSB': 'LSB',
+      'CW': 'CW',
+      'AM': 'AM',
+      'SAM': 'AM',
+      'FM': 'FM',
+      'NFM': 'FM',
+      'DFM': 'FM',
+      'DIGU': 'RTTY',
+      'DIGL': 'RTTY',
+      'RTTY': 'RTTY',
+      'DRM': 'DRM',
+      'DSTR': 'DSTAR'
+    };
+    return modeMap[flexMode] || flexMode;
+  },
+
+  mapModeToFlex: (mode) => {
+    // Map standard modes to FlexRadio modes
+    const modeMap = {
+      'USB': 'USB',
+      'LSB': 'LSB',
+      'CW': 'CW',
+      'AM': 'AM',
+      'FM': 'FM',
+      'RTTY': 'DIGU',
+      'RTTYR': 'DIGL',
+      'DRM': 'DRM',
+      'DSTAR': 'DSTR'
+    };
+    return modeMap[mode] || 'USB';
+  },
+
+  setFreq: (freq, cb) => {
+    FlexRadioAdapter.client.setFrequency(freq, (response) => {
+      if (response && response.code !== 0) {
+        cb(new Error(response.message));
+      } else {
+        cb(null);
+      }
+    });
+  },
+
+  setMode: (mode, cb) => {
+    const flexMode = FlexRadioAdapter.mapModeToFlex(mode);
+    FlexRadioAdapter.client.setMode(flexMode, (response) => {
+      if (response && response.code !== 0) {
+        cb(new Error(response.message));
+      } else {
+        cb(null);
+      }
+    });
+  },
+
+  setPTT: (ptt, cb) => {
+    FlexRadioAdapter.client.setPTT(ptt, (response) => {
+      if (response && response.code !== 0) {
+        cb(new Error(response.message));
+      } else {
+        cb(null);
+      }
+    });
+  },
+};
+
+// ==========================================
 // ADAPTER: UNIFIED API
 // ==========================================
 
@@ -392,6 +514,8 @@ const MockAdapter = {
 // Initialize selected adapter
 if (CONFIG.radio.type === "flrig") {
   FlrigAdapter.init();
+} else if (CONFIG.radio.type === "flexradio") {
+  FlexRadioAdapter.init();
 } else if (CONFIG.radio.type === "mock") {
   MockAdapter.init();
 } else {
@@ -468,6 +592,11 @@ app.post("/freq", (req, res) => {
 
       res.json({ success: true });
     });
+  } else if (CONFIG.radio.type === "flexradio") {
+    FlexRadioAdapter.setFreq(freq, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true });
+    });
   } else if (CONFIG.radio.type === "mock") {
     MockAdapter.setFreq(freq, (_err) => {
       if (req.body.tune) MockAdapter.tune();
@@ -494,6 +623,11 @@ app.post("/mode", (req, res) => {
     FlrigAdapter.setMode(mode, (err, _val) => {
       if (err) return res.status(500).json({ error: err.message });
       setTimeout(FlrigAdapter.poll, 100);
+      res.json({ success: true });
+    });
+  } else if (CONFIG.radio.type === "flexradio") {
+    FlexRadioAdapter.setMode(mode, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true });
     });
   } else if (CONFIG.radio.type === "mock") {
@@ -523,6 +657,12 @@ app.post("/ptt", (req, res) => {
 
   if (CONFIG.radio.type === "flrig") {
     FlrigAdapter.setPTT(ptt, (err, _val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      state.ptt = !!ptt;
+      res.json({ success: true });
+    });
+  } else if (CONFIG.radio.type === "flexradio") {
+    FlexRadioAdapter.setPTT(ptt, (err) => {
       if (err) return res.status(500).json({ error: err.message });
       state.ptt = !!ptt;
       res.json({ success: true });
