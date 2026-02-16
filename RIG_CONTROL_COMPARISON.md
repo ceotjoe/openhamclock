@@ -12,6 +12,7 @@ OpenHamClock offers **three different solutions** for connecting your radio to t
 |----------------|---------------------|
 | 🎯 **I want the simplest setup** | **Rig Listener** — One download, one click |
 | 🔌 **I already use flrig or rigctld** | **Rig Control Daemon** — Works with existing setup |
+| 📡 **I have a FlexRadio (Flex-6000/8000)** | **Rig Control Daemon (FlexRadio mode)** — Native API support |
 | 🌐 **I need a web UI to configure my radio** | **Rig Bridge** — Browser-based configuration |
 | 🏠 **Radio is on a different computer** | **Rig Bridge** or **Rig Control Daemon** — Network accessible |
 | 🐧 **Running on Raspberry Pi** | **Rig Control Daemon** — Lightweight, proven |
@@ -139,6 +140,7 @@ node rig-bridge.js
 **Supported Backends:**
 - **rigctld** (HAMlib) — Supports 300+ radio models
 - **flrig** — Popular GUI rig control software
+- **flexradio** — Native FlexRadio SmartSDR API (Flex-6000/8000 series)
 - **mock** — Simulation mode for testing
 
 **Setup:**
@@ -163,6 +165,64 @@ node rig-daemon.js
 - You want to share radio control across multiple applications
 - You're running on a Raspberry Pi or headless server
 - You need maximum flexibility and don't mind config files
+
+---
+
+### 4️⃣ FlexRadio SmartSDR API (Rig Control Daemon)
+
+**What it is:** Native FlexRadio SmartSDR API support built into the Rig Control Daemon. Connects directly to Flex-6000/8000 series radios without requiring flrig or rigctld.
+
+**Best for:**
+- FlexRadio owners who want direct API access
+- Users who want sub-second latency
+- Multi-slice operation scenarios
+- Integration with SmartSDR ecosystem
+
+**Pros:**
+- ✅ **Direct API connection** — No intermediate software needed
+- ✅ **Sub-second latency** — Real-time status updates
+- ✅ **Slice control** — Control any of 8 independent VFOs
+- ✅ **Automatic reconnection** — Handles network interruptions gracefully
+- ✅ **Native protocol** — Full access to FlexRadio features
+- ✅ **Lightweight** — Same minimal footprint as Rig Control Daemon
+
+**Cons:**
+- ❌ **FlexRadio only** — Doesn't work with other radio brands
+- ❌ Requires SmartSDR running (creates API server)
+- ❌ Requires Node.js installation
+- ❌ Manual configuration (edit JSON file)
+
+**Supported Radios:**
+- Flex-6300, Flex-6400, Flex-6500, Flex-6600, Flex-6700
+- Flex-8600, Flex-8800
+
+**Setup:**
+```bash
+cd rig-control
+npm install
+
+# Edit rig-config.json:
+{
+  "radio": {
+    "type": "flexradio",
+    "host": "192.168.1.100",  // Your FlexRadio IP
+    "port": 4992,
+    "pttEnabled": true,
+    "flexradio": {
+      "slice": 0,              // Which slice to control (0-7)
+      "clientName": "OpenHamClock"
+    }
+  }
+}
+
+node rig-daemon.js
+```
+
+**When to use:**
+- You own a FlexRadio Flex-6000 or Flex-8000 series radio
+- You want the lowest possible latency
+- You need to control a specific slice
+- You're already familiar with SmartSDR API concepts
 
 ---
 

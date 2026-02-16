@@ -16,7 +16,8 @@ This standalone Node.js service acts as a bridge between the OpenHamClock web ap
 
 1.  **rigctld** (HAMlib): Uses the TCP text protocol (Default port 4532).
 2.  **flrig**: Uses XML-RPC (Default port 12345).
-3.  **mock**: Simulation mode (logs to console, no hardware needed).
+3.  **flexradio**: Native FlexRadio SmartSDR API (Default port 4992).
+4.  **mock**: Simulation mode (logs to console, no hardware needed).
 
 ## Installation
 
@@ -64,6 +65,50 @@ By default, the daemon binds to `0.0.0.0`, meaning it is accessible from other m
 - **Firewall**: Ensure port `5555` is open.
 - **Connect**: In OpenHamClock Settings, use the daemon's IP (e.g., `http://192.168.1.50:5555`).
 
+### FlexRadio SmartSDR API
+
+For Flex-6000 and Flex-8000 series radios, you can connect directly to the SmartSDR API without rigctld or flrig.
+
+**Configuration:**
+```json
+{
+  "radio": {
+    "type": "flexradio",
+    "host": "192.168.1.100",
+    "port": 4992,
+    "pttEnabled": true,
+    "flexradio": {
+      "slice": 0,
+      "clientName": "OpenHamClock"
+    }
+  }
+}
+```
+
+**Features:**
+- Direct TCP/IP connection to radio
+- Sub-second latency
+- Real-time status updates
+- Full slice control (8 independent VFOs)
+- PTT support
+- Automatic reconnection
+
+**Requirements:**
+- FlexRadio on same network
+- SmartSDR running (creates API server)
+- Port 4992 accessible
+
+**Slice Selection:**
+- Slice 0-7 (default: 0)
+- Each slice is an independent VFO
+- Choose the slice used by your operating software
+- OpenHamClock will control only the selected slice
+
+**Client Naming:**
+- Set `clientName` to identify this connection in SmartSDR
+- Helps distinguish between multiple API clients
+- Default: "OpenHamClock"
+
 ## Usage
 
 ### Start with Config File (Recommended)
@@ -86,6 +131,12 @@ node rig-daemon.js --type rigctld --rig-port 4532
 
 ```bash
 node rig-daemon.js --type flrig
+```
+
+**For FlexRadio SmartSDR API:**
+
+```bash
+node rig-daemon.js --type flexradio --rig-host 192.168.1.100 --rig-port 4992
 ```
 
 **For Simulation Mode:**
