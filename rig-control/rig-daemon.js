@@ -15,6 +15,7 @@ const cors = require("cors");
 const net = require("net");
 const xmlrpc = require("xmlrpc");
 const FlexRadioClient = require("./lib/flexradio");
+const TCIClient = require("./lib/tci");
 
 // Configuration Defaults
 const fs = require("fs");
@@ -454,6 +455,111 @@ const FlexRadioAdapter = {
 };
 
 // ==========================================
+// ADAPTER: TCI (Transceiver Control Interface)
+// ==========================================
+const TCIAdapter = {
+  client: null,
+
+  init: () => {
+    console.log('[TCI] Initializing TCI client...');
+    TCIAdapter.client = new TCIClient(CONFIG);
+
+    // Setup event handlers
+    TCIAdapter.client.on('connected', () => {
+      console.log('[TCI] Connected to TCI server');
+      state.connected = true;
+      broadcast({ type: 'update', prop: 'connected', value: true });
+    });
+
+    TCIAdapter.client.on('disconnected', () => {
+      console.log('[TCI] Disconnected from TCI server');
+      state.connected = false;
+      broadcast({ type: 'update', prop: 'connected', value: false });
+    });
+
+    TCIAdapter.client.on('frequency', (freq) => {
+      const newFreq = Math.round(freq);
+      if (newFreq !== state.freq) {
+        state.freq = newFreq;
+        broadcast({ type: 'update', prop: 'freq', value: state.freq });
+      }
+      state.lastUpdate = Date.now();
+    });
+
+    TCIAdapter.client.on('mode', (mode) => {
+      const mappedMode = TCIAdapter.mapMode(mode);
+      if (mappedMode !== state.mode) {
+        state.mode = mappedMode;
+        broadcast({ type: 'update', prop: 'mode', value: state.mode });
+      }
+    });
+
+    TCIAdapter.client.on('ptt', (ptt) => {
+      if (ptt !== state.ptt) {
+        state.ptt = ptt;
+        broadcast({ type: 'update', prop: 'ptt', value: state.ptt });
+      }
+    });
+
+    TCIAdapter.client.on('error', (err) => {
+      console.error('[TCI] Error:', err.message);
+    });
+
+    // Connect to TCI server
+    TCIAdapter.client.connect();
+  },
+
+  mapMode: (tciMode) => {
+    // Map TCI modes to standard modes
+    const modeMap = {
+      'am': 'AM',
+      'sam': 'AM',
+      'dsb': 'AM',
+      'lsb': 'LSB',
+      'usb': 'USB',
+      'cw': 'CW',
+      'nfm': 'FM',
+      'wfm': 'FM',
+      'digl': 'RTTY',
+      'digu': 'RTTY',
+      'drm': 'DRM'
+    };
+    return modeMap[tciMode.toLowerCase()] || tciMode.toUpperCase();
+  },
+
+  mapModeToTCI: (mode) => {
+    // Map standard modes to TCI modes
+    const modeMap = {
+      'AM': 'am',
+      'LSB': 'lsb',
+      'USB': 'usb',
+      'CW': 'cw',
+      'FM': 'nfm',
+      'RTTY': 'digu',
+      'RTTYR': 'digl',
+      'DRM': 'drm'
+    };
+    return modeMap[mode] || 'usb';
+  },
+
+  setFreq: (freq, cb) => {
+    TCIAdapter.client.setFrequency(freq);
+    if (cb) cb(null);
+  },
+
+  setMode: (mode, cb) => {
+    const tciMode = TCIAdapter.mapModeToTCI(mode);
+    TCIAdapter.client.setMode(tciMode);
+    if (cb) cb(null);
+  },
+
+  setPTT: (ptt, cb) => {
+    TCIAdapter.client.setPTT(ptt);
+    if (cb) cb(null);
+  },
+};
+
+// ==========================================
 // ADAPTER: UNIFIED API
 // ==========================================
 
@@ -516,6 +622,8 @@ if (CONFIG.radio.type === "flrig") {
   FlrigAdapter.init();
 } else if (CONFIG.radio.type === "flexradio") {
   FlexRadioAdapter.init();
+} else if (CONFIG.radio.type === "tci") {
+  TCIAdapter.init();
 } else if (CONFIG.radio.type === "mock") {
   MockAdapter.init();
 } else {
@@ -597,6 +705,11 @@ app.post("/freq", (req, res) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true });
     });
+  } else if (CONFIG.radio.type === "tci") {
+    TCIAdapter.setFreq(freq, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true });
+    });
   } else if (CONFIG.radio.type === "mock") {
     MockAdapter.setFreq(freq, (_err) => {
       if (req.body.tune) MockAdapter.tune();
@@ -627,6 +740,11 @@ app.post("/mode", (req, res) => {
     });
   } else if (CONFIG.radio.type === "flexradio") {
     FlexRadioAdapter.setMode(mode, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true });
+    });
+  } else if (CONFIG.radio.type === "tci") {
+    TCIAdapter.setMode(mode, (err) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ success: true });
     });
@@ -663,6 +781,12 @@ app.post("/ptt", (req, res) => {
     });
   } else if (CONFIG.radio.type === "flexradio") {
     FlexRadioAdapter.setPTT(ptt, (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      state.ptt = !!ptt;
+      res.json({ success: true });
+    });
+  } else if (CONFIG.radio.type === "tci") {
+    TCIAdapter.setPTT(ptt, (err) => {
       if (err) return res.status(500).json({ error: err.message });
       state.ptt = !!ptt;
       res.json({ success: true });
