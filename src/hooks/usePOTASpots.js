@@ -75,10 +75,16 @@ export const usePOTASpots = () => {
               if (loc) { lat = loc.lat; lon = loc.lon; }
             }
 
+
+            // POTA API returns frequency in kHz as a string (e.g., "7160" or "433240")
+            // Convert to MHz for consistency with SOTA and proper rig control
+            const freqKhz = parseFloat(s.frequency);
+            const freqMhz = !isNaN(freqKhz) ? freqKhz / 1000 : null;
+
             return {
               call: s.activator,
               ref: s.reference,
-              freq: s.frequency,
+              freq: freqMhz ? freqMhz.toString() : s.frequency, // Convert to MHz string
               mode: s.mode,
               name: s.name || s.locationDesc,
               locationDesc: s.locationDesc,
