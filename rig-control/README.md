@@ -17,7 +17,8 @@ This standalone Node.js service acts as a bridge between the OpenHamClock web ap
 1.  **rigctld** (HAMlib): Uses the TCP text protocol (Default port 4532).
 2.  **flrig**: Uses XML-RPC (Default port 12345).
 3.  **flexradio**: Native FlexRadio SmartSDR API (Default port 4992).
-4.  **mock**: Simulation mode (logs to console, no hardware needed).
+4.  **tci**: TCI (Transceiver Control Interface) WebSocket protocol (Default port 50001).
+5.  **mock**: Simulation mode (logs to console, no hardware needed).
 
 ## Installation
 
@@ -109,6 +110,51 @@ For Flex-6000 and Flex-8000 series radios, you can connect directly to the Smart
 - Helps distinguish between multiple API clients
 - Default: "OpenHamClock"
 
+### TCI (Transceiver Control Interface)
+
+For Expert Electronics SDR software (ExpertSDR2/3) and other TCI-compatible transceivers.
+
+**Configuration:**
+```json
+{
+  "radio": {
+    "type": "tci",
+    "host": "127.0.0.1",
+    "port": 50001,
+    "pttEnabled": true,
+    "tci": {
+      "trx": 0,
+      "vfo": 0,
+      "clientName": "OpenHamClock"
+    }
+  }
+}
+```
+
+**Features:**
+- WebSocket connection (ws://host:port)
+- Real-time bidirectional control
+- Push notifications (no polling needed)
+- Multi-client support
+- TRX/VFO selection
+- Automatic reconnection
+
+**Requirements:**
+- ExpertSDR2/3 running with TCI enabled
+- Port 50001 accessible (default)
+- TCI protocol version 1.9+
+
+**TRX/VFO Selection:**
+- TRX 0-N (transceiver/receiver index)
+- VFO 0-1 (VFO A/B)
+- OpenHamClock controls only selected TRX/VFO
+- Choose the TRX/VFO used by your operating software
+
+**Client Naming:**
+- Set `clientName` to identify this connection in ExpertSDR
+- Helps distinguish between multiple API clients
+- Default: "OpenHamClock"
+
 ## Usage
 
 ### Start with Config File (Recommended)
@@ -137,6 +183,12 @@ node rig-daemon.js --type flrig
 
 ```bash
 node rig-daemon.js --type flexradio --rig-host 192.168.1.100 --rig-port 4992
+```
+
+**For TCI (Expert Electronics SDR):**
+
+```bash
+node rig-daemon.js --type tci --rig-host 127.0.0.1 --rig-port 50001
 ```
 
 **For Simulation Mode:**

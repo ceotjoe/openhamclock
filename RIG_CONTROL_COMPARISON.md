@@ -13,7 +13,8 @@ OpenHamClock offers **three different solutions** for connecting your radio to t
 | 🎯 **I want the simplest setup** | **Rig Listener** — One download, one click |
 | 🔌 **I already use flrig or rigctld** | **Rig Control Daemon** — Works with existing setup |
 | 📡 **I have a FlexRadio (Flex-6000/8000)** | **Rig Control Daemon (FlexRadio mode)** — Native API support |
-| 🌐 **I need a web UI to configure my radio** | **Rig Bridge** — Browser-based configuration |
+| 🌐 **I use Expert Electronics SDR** | **Rig Control Daemon (TCI mode)** — Native TCI protocol |
+| 🖥️ **I need a web UI to configure my radio** | **Rig Bridge** — Browser-based configuration |
 | 🏠 **Radio is on a different computer** | **Rig Bridge** or **Rig Control Daemon** — Network accessible |
 | 🐧 **Running on Raspberry Pi** | **Rig Control Daemon** — Lightweight, proven |
 
@@ -141,6 +142,7 @@ node rig-bridge.js
 - **rigctld** (HAMlib) — Supports 300+ radio models
 - **flrig** — Popular GUI rig control software
 - **flexradio** — Native FlexRadio SmartSDR API (Flex-6000/8000 series)
+- **tci** — Native TCI protocol (Expert Electronics SDR)
 - **mock** — Simulation mode for testing
 
 **Setup:**
@@ -223,6 +225,66 @@ node rig-daemon.js
 - You want the lowest possible latency
 - You need to control a specific slice
 - You're already familiar with SmartSDR API concepts
+
+---
+
+### 5️⃣ TCI (Transceiver Control Interface) - Rig Control Daemon
+
+**What it is:** Native TCI protocol support built into the Rig Control Daemon. Connects directly to Expert Electronics SDR software (ExpertSDR2/3) via WebSocket without requiring flrig or rigctld.
+
+**Best for:**
+- Expert Electronics SDR users
+- Users who want real-time push notifications
+- Multi-client operation scenarios
+- Integration with TCI ecosystem
+
+**Pros:**
+- ✅ **WebSocket protocol** — Modern, full-duplex communication
+- ✅ **Real-time updates** — Server pushes status changes (no polling)
+- ✅ **Sub-second latency** — Instant response
+- ✅ **Multi-client support** — Share control with other applications
+- ✅ **TRX/VFO control** — Select specific transceiver and VFO
+- ✅ **Lightweight** — Same minimal footprint as Rig Control Daemon
+
+**Cons:**
+- ❌ **ExpertSDR only** — Requires Expert Electronics SDR software
+- ❌ Requires ExpertSDR running (creates TCI server)
+- ❌ Requires Node.js installation
+- ❌ Manual configuration (edit JSON file)
+
+**Supported Software:**
+- ExpertSDR2
+- ExpertSDR3
+- Any TCI-compatible transceiver software
+
+**Setup:**
+```bash
+cd rig-control
+npm install
+
+# Edit rig-config.json:
+{
+  "radio": {
+    "type": "tci",
+    "host": "127.0.0.1",  // ExpertSDR IP
+    "port": 50001,
+    "pttEnabled": true,
+    "tci": {
+      "trx": 0,              // Which transceiver to control (0-N)
+      "vfo": 0,              // Which VFO to control (0-1)
+      "clientName": "OpenHamClock"
+    }
+  }
+}
+
+node rig-daemon.js
+```
+
+**When to use:**
+- You use Expert Electronics ExpertSDR2 or ExpertSDR3
+- You want real-time push notifications instead of polling
+- You need to control a specific TRX/VFO
+- You want to share control with other TCI clients
 
 ---
 
