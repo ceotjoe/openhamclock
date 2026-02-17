@@ -332,19 +332,17 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
       }
       
       const absTermX = Math.abs(terminatorX);
-      
+
       if (phase < 0.5) {
-        // Waxing — right side lit
-        // Outer arc: top to bottom along right limb (sweep=1, clockwise)
-        // Terminator: bottom to top (elliptical arc)
-        const sweepTerminator = phase < 0.25 ? 1 : 0; // concave before quarter, convex after
-        return `M${CX},${CY - R} A${R},${R} 0 0,1 ${CX},${CY + R} A${absTermX},${R} 0 0,${sweepTerminator} ${CX},${CY - R}`;
+        // Waxing — right side lit, terminator concave (sweep=0)
+        // At phase≈0: absTermX≈0, ellipse collapses to a line → nearly no lit area (dark)
+        // At phase=0.25: absTermX=R, concave arc gives exactly right half lit
+        return `M${CX},${CY - R} A${R},${R} 0 0,1 ${CX},${CY + R} A${absTermX},${R} 0 0,0 ${CX},${CY - R}`;
       } else {
-        // Waning — left side lit
-        // Outer arc: top to bottom along left limb (sweep=0, counter-clockwise)
-        // Terminator: bottom to top
-        const sweepTerminator = phase > 0.75 ? 1 : 0;
-        return `M${CX},${CY - R} A${R},${R} 0 0,0 ${CX},${CY + R} A${absTermX},${R} 0 0,${sweepTerminator} ${CX},${CY - R}`;
+        // Waning — left side lit, terminator convex (sweep=1)
+        // At phase=0.75: absTermX=R, convex arc gives exactly left half lit
+        // At phase≈1: absTermX≈0, collapses to line → nearly no lit area (dark)
+        return `M${CX},${CY - R} A${R},${R} 0 0,0 ${CX},${CY + R} A${absTermX},${R} 0 0,1 ${CX},${CY - R}`;
       }
     };
     
