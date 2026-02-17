@@ -5604,7 +5604,6 @@ app.get('/api/wspr/heatmap', async (req, res) => {
   }
 });
 
-
 // ============================================
 // SATELLITE TRACKING API
 // ============================================
@@ -5620,8 +5619,8 @@ const HAM_SATELLITES = {
   'PO-101': { norad: 43678, name: 'PO-101 (Diwata-2)', color: '#ff3399', priority: 1, mode: 'FM' },
   
   // Weather Satellites - GOES & METEOR
-  //'GOES-18': { norad: 51850, name: 'GOES-18', color: '#66ff66', priority: 1, mode: 'GRB/HRIT/LRIT' },
-  //'GOES-19': { norad: 60133, name: 'GOES-19', color: '#33cc33', priority: 1, mode: 'GRB/HRIT/LRIT' },
+  'GOES-18': { norad: 51850, name: 'GOES-18', color: '#66ff66', priority: 1, mode: 'GRB/HRIT/LRIT' },
+  'GOES-19': { norad: 60133, name: 'GOES-19', color: '#33cc33', priority: 1, mode: 'GRB/HRIT/LRIT' },
   'METEOR-M2-3': { norad: 57166, name: 'METEOR M2-3', color: '#FF0000', priority: 1, mode: 'HRPT/LRPT' },
   'METEOR-M2-4': { norad: 59051, name: 'METEOR M2-4', color: '#FF0000', priority: 1, mode: 'HRPT/LRPT' },
   'SUOMI-NPP': { norad: 37849, name: 'SUOMI NPP', color: '#0000FF', priority: 2, mode: 'HRD/SMD' },
@@ -5681,18 +5680,34 @@ const HAM_SATELLITES = {
   'SSTV-ISS': { norad: 25544, name: 'ISS SSTV', color: '#00ffff', priority: 2, mode: 'SSTV' }
 };
 
-// Cache for TLE data (refresh every 6 hours)
 let tleCache = { data: null, timestamp: 0 };
 const TLE_CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours
+const OFFLINE_MODE = false; // Set to false when you want live data again
 
 app.get('/api/satellites/tle', async (req, res) => {
   try {
     const now = Date.now();
-    // Return cached data if fresh (6-hour window)
+    const backupFilePath = path.join(__dirname, 'tle_backup.txt'); // Define this first
+
+    // 1. Return memory cache if fresh
     if (tleCache.data && (now - tleCache.timestamp) < TLE_CACHE_DURATION) {
       return res.json(tleCache.data);
     }
 
+    // 2. OFFLINE TESTING BLOCK
+    if (OFFLINE_MODE && fs.existsSync(backupFilePath)) {
+      logInfo('[Satellites] Loading OFFLINE cache from tle_backup.txt');
+      const fileContent = fs.readFileSync(backupFilePath, 'utf8');
+      const parsedData = JSON.parse(fileContent);
+      
+      tleCache = { data: parsedData, timestamp: now };
+      return res.json(parsedData);
+    }
+	
+	// C. Live Fetching (Only runs if OFFLINE_MODE is false or file is missing)
+    logDebug('[Satellites] Fetching fresh TLE data from CelesTrak...');
+	
+	// --- COMMENT OUT THE START OF THE FETCH LOGIC IF TESTING SO AS TO NOT PULL FROM CELSTRACK TOO OFTEN AND const OFFLINE_MODE = false; // Set to false when you want live data again ---
     logDebug('[Satellites] Fetching fresh TLE data from multiple groups...');
     const tleData = {}; // Declare this exactly once to avoid SyntaxErrors
     
@@ -5772,6 +5787,7 @@ app.get('/api/satellites/tle', async (req, res) => {
     }
 
     tleCache = { data: tleData, timestamp: now };
+	// --- END OF COMMENTED OUT FETCH LOGIC --- 
     res.json(tleData);
   } catch (error) {
     // Return stale cache or empty if everything fails
