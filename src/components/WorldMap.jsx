@@ -947,7 +947,7 @@ export const WorldMap = ({
           if (showDXLabels || isHovered) {
             const labelIcon = L.divIcon({
               className: "",
-              html: `<span style="display:inline-block;background:${isHovered ? "#fff" : color};color:${isHovered ? color : "#000"};padding:${isHovered ? "5px 10px" : "4px 8px"};border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? "14px" : "12px"};font-weight:700;white-space:nowrap;border:2px solid ${isHovered ? color : "rgba(0,0,0,0.5)"};box-shadow:0 2px ${isHovered ? "8px" : "4px"} rgba(0,0,0,${isHovered ? "0.6" : "0.4"});">${path.dxCall}</span>`,
+              html: `<span style="display:inline-block;background:${isHovered ? "#fff" : color};color:${isHovered ? color : "#000"};padding:${isHovered ? "3px 6px" : "2px 5px"};border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? "12px" : "11px"};font-weight:700;white-space:nowrap;border:1px solid ${isHovered ? color : "rgba(0,0,0,0.5)"};box-shadow:0 1px ${isHovered ? "4px" : "2px"} rgba(0,0,0,${isHovered ? "0.5" : "0.3"});line-height:1.1;">${path.dxCall}</span>`,
               iconSize: null,
               iconAnchor: [0, 0],
             });
@@ -1103,7 +1103,7 @@ export const WorldMap = ({
           if (showPOTALabels) {
             const labelIcon = L.divIcon({
               className: "",
-              html: `<span style="display:inline-block;background:#44cc44;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${spot.call}</span>`,
+              html: `<span style="display:inline-block;background:#44cc44;color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${spot.call}</span>`,
               iconSize: null,
               iconAnchor: [0, -2],
             });
@@ -1156,7 +1156,7 @@ export const WorldMap = ({
           if (showWWFFLabels) {
             const labelIcon = L.divIcon({
               className: "",
-              html: `<span style="display:inline-block;background:#a3f3a3;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${esc(spot.call)}</span>`,
+              html: `<span style="display:inline-block;background:#a3f3a3;color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${esc(spot.call)}</span>`,
               iconSize: null,
               iconAnchor: [0, -2],
             });
@@ -1209,7 +1209,7 @@ export const WorldMap = ({
           if (showDXLabels) {
             const labelIcon = L.divIcon({
               className: "",
-              html: `<span style="display:inline-block;background:#ff9632;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${spot.call}</span>`,
+              html: `<span style="display:inline-block;background:#ff9632;color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${spot.call}</span>`,
               iconSize: null,
               iconAnchor: [0, -2],
             });
