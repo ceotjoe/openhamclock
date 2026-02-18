@@ -9,14 +9,30 @@ import { apiFetch } from '../utils/apiFetch';
 export const useSOTASpots = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastChecked, setLastChecked] = useState(null);
+  const lastNewestSpotRef = useRef(null);
   const fetchRef = useRef(null);
 
   useEffect(() => {
     const fetchSOTA = async () => {
       try {
-        const res = await apiFetch('/api/sota/spots');
+        // Cache-bust to bypass browser cache AND Cloudflare edge cache
+        const res = await apiFetch(`/api/sota/spots?_t=${Date.now()}`, { cache: 'no-store' });
         if (res?.ok) {
           const spots = await res.json();
+          console.log(`[SOTA] Fetched ${Array.isArray(spots) ? spots.length : 0} spots`);
+          
+          // Only mark as "updated" when data content actually changes
+          let newestTime = null;
+          if (Array.isArray(spots) && spots.length > 0) {
+            const times = spots.map(s => s.timeStamp).filter(Boolean).sort().reverse();
+            newestTime = times[0] || null;
+          }
+          if (newestTime !== lastNewestSpotRef.current || lastNewestSpotRef.current === null) {
+            lastNewestSpotRef.current = newestTime;
+            setLastUpdated(Date.now());
+          }
 
           // Map SOTA API response to our standard spot format
           const mapped = (Array.isArray(spots) ? spots : [])
@@ -25,6 +41,12 @@ export const useSOTASpots = () => {
               // Filter out QRT (operator signed off)
               const comments = (s.comments || '').toUpperCase().trim();
               if (comments === 'QRT' || comments.startsWith('QRT ') || comments.startsWith('QRT,')) return false;
+              // Filter out spots older than 60 minutes
+              if (s.timeStamp) {
+                const ts = s.timeStamp.endsWith('Z') || s.timeStamp.endsWith('z') ? s.timeStamp : s.timeStamp + 'Z';
+                const ageMs = Date.now() - new Date(ts).getTime();
+                if (ageMs > 60 * 60 * 1000) return false;
+              }
               return true;
             })
             .map(s => {
@@ -59,10 +81,13 @@ export const useSOTASpots = () => {
             });
 
           setData(mapped);
+        } else {
+          console.warn(`[SOTA] Fetch failed: ${res?.status || 'no response'} ${res?.statusText || ''}`);
         }
       } catch (err) {
-        console.error('SOTA error:', err);
+        console.error('[SOTA] Fetch error:', err.message || err);
       } finally {
+        setLastChecked(Date.now());
         setLoading(false);
       }
     };
@@ -75,7 +100,7 @@ export const useSOTASpots = () => {
 
   useVisibilityRefresh(() => fetchRef.current?.(), 10000);
 
-  return { data, loading };
+  return { data, loading, lastUpdated, lastChecked };
 };
 
 export default useSOTASpots;

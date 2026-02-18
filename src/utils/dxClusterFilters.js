@@ -180,7 +180,7 @@ const applyBandFilter = (item, filters) => {
  */
 const applyModeFilter = (item, filters) => {
     if (filters.modes?.length > 0) {
-        const mode = detectMode(item.comment);
+        const mode = detectMode(item.comment, item.freq);
         if (!mode || !filters.modes.includes(mode)) return false;
     }
     return true;

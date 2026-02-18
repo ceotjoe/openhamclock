@@ -10,6 +10,53 @@ import { useState, useEffect } from 'react';
 // Each entry: { version, date, heading, features: [...] }
 const CHANGELOG = [
   {
+    version: '15.5.4',
+    date: '2026-02-18',
+    heading: 'Squashing bugs, plugging leaks, and keeping your spots fresh.',
+    features: [
+      {
+        icon: '📡',
+        title: 'Stale Spots Fix',
+        desc: 'Fixed a bug where WWFF spots could show data hours old due to a cache validation error. All three spot sources (POTA, SOTA, WWFF) now enforce a 60-minute age filter and a 10-minute stale cache limit — no more chasing ghosts.'
+      },
+      {
+        icon: '🧠',
+        title: 'Memory Leak Fixes',
+        desc: 'Plugged several server-side memory leaks: RBN API response cache now auto-cleans, callsign and IP tracking caps tightened, and cache structures that grew unbounded over 24 hours are now properly pruned.'
+      },
+      {
+        icon: '🔇',
+        title: 'QRZ Login Spam Eliminated',
+        desc: 'QRZ credential failures now properly respect the 1-hour cooldown. Previously, any user testing credentials in Settings would reset the timer for everyone, hammering QRZ with bad logins all day.'
+      },
+      {
+        icon: '🛡️',
+        title: 'Cleaner Error Handling',
+        desc: 'Added proper Express error middleware to catch body-parser errors gracefully. No more stack traces in logs from clients disconnecting mid-request or sending oversized payloads.'
+      },
+      {
+        icon: '🎨',
+        title: 'Prettier for Contributors',
+        desc: 'Standardized code formatting with Prettier, pre-commit hooks via Husky, and CI enforcement. No more quote style debates in pull requests — formatting is now automatic.'
+      },
+      {
+        icon: '📻',
+        title: 'Rig Control Options Restored',
+        desc: 'The rig-bridge (flrig/rigctld) and rig-control (daemon mode) directories are back for power users who need more customization than the one-click Rig Listener provides.'
+      },
+      {
+        icon: '🔎',
+        title: 'DX Cluster Mode Filter Fixed',
+        desc: 'Filtering by SSB, FT8, or CW no longer hides everything. Mode detection now infers from frequency when the spot comment doesn\'t mention a mode — which is most spots. 14.074? That\'s FT8. 14.250? SSB. It just works now.'
+      },
+      {
+        icon: '📡',
+        title: 'RBN Skimmer Locations Fixed',
+        desc: 'Fixed a bug where RBN skimmer callsigns could show at wrong locations on the map. Enrichment is now sequential with cross-validation — if a lookup returns a location >5000 km from the callsign\'s expected country, it falls back to prefix estimation.'
+      },
+    ]
+  },
+  {
     version: '15.5.3',
     date: '2026-02-17',
     heading: 'Satellites got smarter, SOTA got richer, and tuning just works.',

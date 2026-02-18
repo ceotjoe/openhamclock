@@ -81,6 +81,28 @@ fix/pota-frequency-display
 docs/update-readme
 ```
 
+## Code Formatting
+
+We use **Prettier** to enforce consistent formatting across the codebase. This eliminates quote style, indentation, and whitespace noise from PRs so code review can focus on logic.
+
+**It happens automatically:** If you run `npm install`, a git pre-commit hook (via Husky + lint-staged) will auto-format any staged files before each commit. You don't need to think about it.
+
+**Manual commands:**
+
+```bash
+# Format everything
+npm run format
+
+# Check without writing (what CI runs)
+npm run format:check
+```
+
+**Our style** (`.prettierrc`): single quotes, semicolons, 2-space indent, 120-char line width, trailing commas.
+
+**CI will fail** if unformatted code is pushed. If you see a CI failure on the `format` check, just run `npm run format` and commit the result.
+
+**IDE setup (optional but recommended):** Install the Prettier extension for your editor and enable "Format on Save." The `.prettierrc` and `.editorconfig` files will be picked up automatically.
+
 ## Code Guidelines
 
 ### Components
@@ -251,8 +273,11 @@ Before submitting a PR, verify:
 # Run tests
 npm test
 
-# Run linting
-npm run lint
+# Check formatting (CI will fail without this)
+npm run format:check
+
+# Auto-fix formatting
+npm run format
 ```
 
 ## Important Notes

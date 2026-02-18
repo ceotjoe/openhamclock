@@ -2,6 +2,27 @@
 
 All notable changes to OpenHamClock will be documented in this file.
 
+## [15.5.4] - 2026-02-18
+
+### Fixed
+- **WWFF cache validation bug**: Copy-paste error checked `potaCache.data` instead of `wwffCache.data`, causing stale or missing WWFF spots
+- **Stale spot fallback**: POTA, SOTA, and WWFF endpoints now cap stale cache at 10 minutes (was unlimited on upstream API failure)
+- **Client-side age filtering**: POTA and SOTA spots now filter out entries older than 60 minutes (WWFF already had this)
+- **QRZ login spam**: Credential failure cooldown only resets when credentials actually change, preventing repeated bad-login attempts across users
+- **Memory leaks**: rbnApiCaches now auto-cleaned every 60s, callsign cache cap reduced 10K→5K, IP tracking cap reduced 100K→50K
+- **Express error handling**: Added proper error middleware for BadRequestError/PayloadTooLargeError — no more stack traces from client disconnects
+- **DX Cluster mode filter**: Selecting SSB, FT8, CW etc. in cluster filters hid all spots because mode was only detected from comment text (most spots don't mention mode). Now infers mode from frequency using digital island detection (FT8/FT4 calling freqs) and band plan segments (CW/SSB regions)
+- **RBN skimmer locations**: Fixed skimmer callsigns appearing at wrong locations on the map. Serialized enrichment pipeline (was parallel), added callsign verification on API responses, and cross-validates returned coordinates against callsign prefix — locations >5000 km from expected country fall back to prefix estimation
+- **Map callsign labels**: Tightened bounding boxes on all map callsign labels (DX Cluster, POTA, WWFF, SOTA) — reduced padding, border, font-size, and added tight line-height for less map clutter
+
+### Added
+- Prettier code formatting pipeline with `.prettierrc`, pre-commit hooks (Husky + lint-staged), and CI enforcement
+- `RBNapi=` metric in memory diagnostic logs
+- Express error middleware catches body-parser errors before they reach uncaughtException
+
+### Restored
+- `rig-bridge/` and `rig-control/` directories for power users who prefer flrig/rigctld or daemon-based rig control
+
 ## [15.5.3] - 2026-02-17
 
 ### Added

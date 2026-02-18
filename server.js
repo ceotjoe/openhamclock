@@ -55,6 +55,10 @@ process.on('uncaughtException', (err) => {
   ) {
     return; // Silently ignore — not a real crash
   }
+  // PayloadTooLargeError — client sent oversized body, already handled by Express middleware
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return; // Silently ignore
+  }
   console.error(`[FATAL] Uncaught exception: ${err.message}`);
   console.error(err.stack);
   // Exit on truly fatal errors, but give time to flush logs
@@ -508,6 +512,11 @@ app.use('/api', (req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     return next();
   }
+  // Polling data endpoints — server-side cache handles dedup, no browser/CDN caching
+  if (req.path.includes('/pota') || req.path.includes('/sota') || req.path.includes('/wwff')) {
+    res.setHeader('Cache-Control', 'no-store');
+    return next();
+  }
   // Determine cache duration based on endpoint
   let cacheDuration = 30; // Default: 30 seconds
 
@@ -523,8 +532,6 @@ app.use('/api', (req, res, next) => {
     cacheDuration = 600; // 10 minutes
   } else if (path.includes('/n0nbh') || path.includes('/hamqsl')) {
     cacheDuration = 3600; // 1 hour (N0NBH updates every 3 hours)
-  } else if (path.includes('/pota') || path.includes('/sota')) {
-    cacheDuration = 120; // 2 minutes
   } else if (path.includes('/pskreporter')) {
     cacheDuration = 300; // 5 minutes (PSKReporter rate limits aggressively)
   } else if (path.includes('/dxcluster') || path.includes('/myspots')) {
@@ -1090,7 +1097,7 @@ const visitorStats = loadVisitorStats();
 // Convert today's IPs to a Set for fast lookup
 const todayIPSet = new Set(visitorStats.uniqueIPsToday);
 const allTimeIPSet = new Set(visitorStats.allTimeUniqueIPs);
-const MAX_TRACKED_IPS = 100000; // Stop tracking individual IPs after this (just count)
+const MAX_TRACKED_IPS = 50000; // Stop tracking individual IPs after this (just count)
 
 // Free the array — Set is the authoritative source now, array is no longer persisted
 visitorStats.allTimeUniqueIPs = [];
@@ -1591,34 +1598,20 @@ setInterval(
 );
 
 // Log memory usage every 15 minutes for leak detection
-setInterval(
-  () => {
-    const mem = process.memoryUsage();
-    const mb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
-    const mqttStats = {
-      subscribers: pskMqtt.subscribers.size,
-      subscribedCalls: pskMqtt.subscribedCalls.size,
-      sseClients: [...pskMqtt.subscribers.values()].reduce(
-        (n, s) => n + s.size,
-        0,
-      ),
-      recentSpotsEntries: pskMqtt.recentSpots.size,
-      recentSpotsTotal: [...pskMqtt.recentSpots.values()].reduce(
-        (n, s) => n + s.length,
-        0,
-      ),
-      spotBufferEntries: pskMqtt.spotBuffer.size,
-      spotBufferTotal: [...pskMqtt.spotBuffer.values()].reduce(
-        (n, b) => n + b.length,
-        0,
-      ),
-    };
-    console.log(
-      `[Memory] RSS=${mb(mem.rss)}MB Heap=${mb(mem.heapUsed)}/${mb(mem.heapTotal)}MB External=${mb(mem.external)}MB | MQTT: ${mqttStats.sseClients} SSE clients, ${mqttStats.subscribedCalls} calls, ${mqttStats.recentSpotsTotal} recent spots (${mqttStats.recentSpotsEntries} entries), ${mqttStats.spotBufferTotal} buffered | GeoIP=${geoIPCache.size} CallLookup=${callsignLookupCache?.size || 0} LocCache=${callsignLocationCache?.size || 0} MySpots=${mySpotsCache.size} AllTimeIPs=${allTimeIPSet.size} RBN=${rbnSpotsByDX?.size || 0}`,
-    );
-  },
-  15 * 60 * 1000,
-);
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const mb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+  const mqttStats = {
+    subscribers: pskMqtt.subscribers.size,
+    subscribedCalls: pskMqtt.subscribedCalls.size,
+    sseClients: [...pskMqtt.subscribers.values()].reduce((n, s) => n + s.size, 0),
+    recentSpotsEntries: pskMqtt.recentSpots.size,
+    recentSpotsTotal: [...pskMqtt.recentSpots.values()].reduce((n, s) => n + s.length, 0),
+    spotBufferEntries: pskMqtt.spotBuffer.size,
+    spotBufferTotal: [...pskMqtt.spotBuffer.values()].reduce((n, b) => n + b.length, 0),
+  };
+  console.log(`[Memory] RSS=${mb(mem.rss)}MB Heap=${mb(mem.heapUsed)}/${mb(mem.heapTotal)}MB External=${mb(mem.external)}MB | MQTT: ${mqttStats.sseClients} SSE clients, ${mqttStats.subscribedCalls} calls, ${mqttStats.recentSpotsTotal} recent spots (${mqttStats.recentSpotsEntries} entries), ${mqttStats.spotBufferTotal} buffered | GeoIP=${geoIPCache.size} CallLookup=${callsignLookupCache?.size || 0} LocCache=${callsignLocationCache?.size || 0} MySpots=${mySpotsCache.size} AllTimeIPs=${allTimeIPSet.size} RBN=${rbnSpotsByDX?.size || 0} RBNapi=${rbnApiCaches?.size || 0}`);
+}, 15 * 60 * 1000);
 
 // Periodic GC compaction — helps V8 release fragmented old-space memory
 // Without this, long-running processes slowly accumulate unreclaimable heap
@@ -2564,8 +2557,8 @@ const POTA_CACHE_TTL = 90 * 1000; // 90 seconds (longer than 60s frontend poll t
 app.get('/api/pota/spots', async (req, res) => {
   try {
     // Return cached data if fresh
-    if (potaCache.data && Date.now() - potaCache.timestamp < POTA_CACHE_TTL) {
-      res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
+    if (potaCache.data && (Date.now() - potaCache.timestamp) < POTA_CACHE_TTL) {
+      res.set('Cache-Control', 'no-store');
       return res.json(potaCache.data);
     }
 
@@ -2600,8 +2593,8 @@ app.get('/api/pota/spots', async (req, res) => {
     res.json(data);
   } catch (error) {
     logErrorOnce('POTA', error.message);
-    // Return stale cache on error
-    if (potaCache.data) return res.json(potaCache.data);
+    // Return stale cache on error, but only if less than 10 minutes old
+    if (potaCache.data && (Date.now() - potaCache.timestamp) < 10 * 60 * 1000) return res.json(potaCache.data);
     res.status(500).json({ error: 'Failed to fetch POTA spots' });
   }
 });
@@ -2613,7 +2606,8 @@ const WWFF_CACHE_TTL = 90 * 1000; // 90 seconds (longer than 60s frontend poll t
 app.get('/api/wwff/spots', async (req, res) => {
   try {
     // Return cached data if fresh
-    if (potaCache.data && Date.now() - potaCache.timestamp < WWFF_CACHE_TTL) {
+    if (wwffCache.data && (Date.now() - wwffCache.timestamp) < WWFF_CACHE_TTL) {
+      res.set('Cache-Control', 'no-store');
       return res.json(wwffCache.data);
     }
 
@@ -2637,8 +2631,8 @@ app.get('/api/wwff/spots', async (req, res) => {
     res.json(data);
   } catch (error) {
     logErrorOnce('WWFF', error.message);
-    // Return stale cache on error
-    if (wwffCache.data) return res.json(wwffCache.data);
+    // Return stale cache on error, but only if less than 10 minutes old
+    if (wwffCache.data && (Date.now() - wwffCache.timestamp) < 10 * 60 * 1000) return res.json(wwffCache.data);
     res.status(500).json({ error: 'Failed to fetch WWFF spots' });
   }
 });
@@ -2701,8 +2695,8 @@ checkSummitCache(); // Prime the sotaSummits cache
 app.get('/api/sota/spots', async (req, res) => {
   try {
     // Return cached data if fresh
-    if (sotaCache.data && Date.now() - sotaCache.timestamp < SOTA_CACHE_TTL) {
-      res.set('Cache-Control', 'public, max-age=90, s-maxage=90');
+    if (sotaCache.data && (Date.now() - sotaCache.timestamp) < SOTA_CACHE_TTL) {
+      res.set('Cache-Control', 'no-store');
       return res.json(sotaCache.data);
     }
 
@@ -2734,7 +2728,8 @@ app.get('/api/sota/spots', async (req, res) => {
     res.json(data);
   } catch (error) {
     logErrorOnce('SOTA', error.message);
-    if (sotaCache.data) return res.json(sotaCache.data);
+    // Return stale cache on error, but only if less than 10 minutes old
+    if (sotaCache.data && (Date.now() - sotaCache.timestamp) < 10 * 60 * 1000) return res.json(sotaCache.data);
     res.status(500).json({ error: 'Failed to fetch SOTA spots' });
   }
 });
@@ -4103,7 +4098,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
 // Cache for callsign lookups - callsigns don't change location often
 const callsignLookupCache = new Map(); // key = callsign, value = { data, timestamp }
 const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-const CALLSIGN_CACHE_MAX = 10000; // Hard cap — evict oldest when exceeded
+const CALLSIGN_CACHE_MAX = 5000; // Hard cap — evict oldest when exceeded
 
 // Periodic cleanup: purge expired entries every 30 minutes
 setInterval(
@@ -4491,12 +4486,25 @@ app.post('/api/qrz/configure', writeLimiter, async (req, res) => {
   // Test credentials by attempting login
   const oldUsername = qrzSession.username;
   const oldPassword = qrzSession.password;
+  const credsChanged = username.trim() !== oldUsername || password.trim() !== oldPassword;
   qrzSession.username = username.trim();
   qrzSession.password = password.trim();
   qrzSession.key = null;
   qrzSession.expiry = 0;
-  qrzSession.authFailedUntil = 0; // Clear cooldown — user is providing new credentials
-
+  // Only clear cooldown if credentials actually changed — prevents users from
+  // hammering QRZ by re-testing the same bad creds over and over
+  if (credsChanged) {
+    qrzSession.authFailedUntil = 0;
+  } else if (Date.now() < qrzSession.authFailedUntil) {
+    // Same bad creds, still in cooldown — reject immediately
+    qrzSession.username = oldUsername;
+    qrzSession.password = oldPassword;
+    return res.status(429).json({
+      success: false,
+      error: 'QRZ login recently failed with these credentials. Try again later or use different credentials.'
+    });
+  }
+  
   const key = await qrzLogin();
 
   if (key) {
@@ -6870,9 +6878,15 @@ setInterval(() => {
       `[RBN] Cleanup: removed ${cleaned} expired spots, tracking ${rbnSpotsByDX.size} DX stations`,
     );
   }
+  // Also purge expired rbnApiCaches entries (10s TTL, but entries never removed otherwise)
+  const apiCutoff = Date.now() - 60000; // Keep entries under 1 minute (6x the 10s TTL)
+  for (const [call, entry] of rbnApiCaches) {
+    if (entry.timestamp < apiCutoff) rbnApiCaches.delete(call);
+  }
 }, 60000); // Run every 60 seconds
 
 // Helper: enrich a spot with skimmer location data
+// Uses sequential processing to avoid any concurrent lookup issues
 async function enrichSpotWithLocation(spot) {
   const skimmerCall = spot.callsign;
 
@@ -6895,13 +6909,51 @@ async function enrichSpotWithLocation(spot) {
     );
     if (response.ok) {
       const locationData = await response.json();
+      
+      // Verify the API returned data for the callsign we asked for
+      // (guards against any response mix-up or redirect)
+      const returnedCall = (locationData.callsign || '').toUpperCase();
+      const requestedBase = extractBaseCallsign(skimmerCall);
+      if (returnedCall && returnedCall !== requestedBase && returnedCall !== skimmerCall.toUpperCase()) {
+        console.warn(`[RBN] Callsign mismatch! Requested: ${skimmerCall}, Got: ${returnedCall} — discarding`);
+        return spot;
+      }
+      
       // Validate coordinates are reasonable
-      if (
-        typeof locationData.lat === 'number' &&
-        typeof locationData.lon === 'number' &&
-        Math.abs(locationData.lat) <= 90 &&
-        Math.abs(locationData.lon) <= 180
-      ) {
+      if (typeof locationData.lat === 'number' && typeof locationData.lon === 'number' &&
+          Math.abs(locationData.lat) <= 90 && Math.abs(locationData.lon) <= 180) {
+        
+        // Cross-validate: compare returned location against prefix estimate
+        // If they're wildly different, the lookup data may be wrong
+        const prefixLoc = estimateLocationFromPrefix(requestedBase);
+        if (prefixLoc) {
+          const prefixCoords = maidenheadToLatLon(prefixLoc.grid);
+          if (prefixCoords) {
+            const dist = haversineDistance(locationData.lat, locationData.lon, prefixCoords.lat, prefixCoords.lon);
+            if (dist > 5000) {
+              // Location is > 5000 km from where the callsign prefix says it should be
+              // This is almost certainly wrong data — use prefix estimate instead
+              console.warn(`[RBN] Location sanity check FAILED for ${skimmerCall}: lookup=${locationData.lat.toFixed(1)},${locationData.lon.toFixed(1)} vs prefix=${prefixCoords.lat.toFixed(1)},${prefixCoords.lon.toFixed(1)} (${Math.round(dist)} km apart) — using prefix`);
+              const grid = latLonToGrid(prefixCoords.lat, prefixCoords.lon);
+              const location = {
+                callsign: skimmerCall,
+                grid: grid,
+                lat: prefixCoords.lat,
+                lon: prefixCoords.lon,
+                country: prefixLoc.country || locationData.country
+              };
+              cacheCallsignLocation(skimmerCall, location);
+              return {
+                ...spot,
+                grid: grid,
+                skimmerLat: prefixCoords.lat,
+                skimmerLon: prefixCoords.lon,
+                skimmerCountry: location.country
+              };
+            }
+          }
+        }
+        
         const grid = latLonToGrid(locationData.lat, locationData.lon);
 
         const location = {
@@ -6963,17 +7015,17 @@ app.get('/api/rbn/spots', async (req, res) => {
 
   // Direct O(1) lookup by DX callsign — no scanning the full firehose
   const dxSpots = rbnSpotsByDX.get(callsign) || [];
-  const recentSpots = dxSpots.filter((spot) => spot.timestampMs > cutoff);
-
-  // Enrich with skimmer locations
-  const enrichedSpots = await Promise.all(
-    recentSpots.map(enrichSpotWithLocation),
-  );
-
-  console.log(
-    `[RBN] Returning ${enrichedSpots.length} spots for ${callsign} (last ${minutes} min, ${rbnSpotsByDX.size} DX stations tracked)`,
-  );
-
+  const recentSpots = dxSpots.filter(spot => spot.timestampMs > cutoff);
+  
+  // Enrich with skimmer locations — process sequentially to avoid
+  // concurrent lookup race conditions that can mix up locations
+  const enrichedSpots = [];
+  for (const spot of recentSpots) {
+    enrichedSpots.push(await enrichSpotWithLocation(spot));
+  }
+  
+  console.log(`[RBN] Returning ${enrichedSpots.length} spots for ${callsign} (last ${minutes} min, ${rbnSpotsByDX.size} DX stations tracked)`);
+  
   const response = {
     count: enrichedSpots.length,
     spots: enrichedSpots,
@@ -7857,6 +7909,7 @@ app.get('/api/satellites/tle', async (req, res) => {
     }
 
     tleCache = { data: tleData, timestamp: now };
+
     res.json(tleData);
   } catch (error) {
     // Return stale cache or empty if everything fails
@@ -12476,6 +12529,33 @@ app.get('*', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.sendFile(indexPath);
+});
+
+// ============================================
+// EXPRESS ERROR HANDLER
+// ============================================
+// Catches body-parser errors (BadRequestError, PayloadTooLargeError)
+// before they bubble to uncaughtException and spam the logs.
+// Express error handlers MUST have 4 parameters: (err, req, res, next)
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  // Client disconnected mid-request — completely benign
+  if (err.type === 'request.aborted' || (err.name === 'BadRequestError' && err.message === 'request aborted')) {
+    return; // Silently swallow — not a real error
+  }
+  // Request body too large
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return res.status(413).json({ error: 'Request too large' });
+  }
+  // Malformed JSON body
+  if (err.type === 'entity.parse.failed' || err.status === 400) {
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
+  // Unknown Express error — log once and return 500
+  logErrorOnce('Express', `${err.name || 'Error'}: ${err.message}`);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ============================================

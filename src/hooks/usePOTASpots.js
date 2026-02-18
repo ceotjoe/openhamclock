@@ -32,15 +32,35 @@ function gridToLatLon(grid) {
 export const usePOTASpots = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastChecked, setLastChecked] = useState(null);
+  const lastNewestSpotRef = useRef(null);
   const fetchRefPOTA = useRef(null);
 
   useEffect(() => {
     const fetchPOTA = async () => {
       try {
         // Use server proxy for caching - reduces external API calls
-        const res = await apiFetch('/api/pota/spots');
+        // Cache-bust to bypass browser cache AND Cloudflare edge cache
+        const res = await apiFetch(`/api/pota/spots?_t=${Date.now()}`, { cache: 'no-store' });
         if (res?.ok) {
           const spots = await res.json();
+          console.log(`[POTA] Fetched ${Array.isArray(spots) ? spots.length : 0} spots`);
+          
+          // Log newest spot time for staleness debugging
+          let newestTime = null;
+          if (Array.isArray(spots) && spots.length > 0) {
+            const times = spots.map(s => s.spotTime).filter(Boolean).sort().reverse();
+            newestTime = times[0] || null;
+            if (newestTime) console.log(`[POTA] Newest spot: ${newestTime}`);
+          }
+          
+          // Only mark as "updated" when data content actually changes
+          // (POTA API may return same stale spots for extended periods)
+          if (newestTime !== lastNewestSpotRef.current || lastNewestSpotRef.current === null) {
+            lastNewestSpotRef.current = newestTime;
+            setLastUpdated(Date.now());
+          }
 
           // Filter out QRT spots and nearly-expired spots, then sort by most recent
           const validSpots = spots
@@ -51,6 +71,13 @@ export const usePOTASpots = () => {
 
               // Filter out spots expiring within 60 seconds
               if (typeof s.expire === 'number' && s.expire < 60) return false;
+
+              // Filter out spots older than 60 minutes
+              if (s.spotTime) {
+                const ts = s.spotTime.endsWith('Z') || s.spotTime.endsWith('z') ? s.spotTime : s.spotTime + 'Z';
+                const ageMs = Date.now() - new Date(ts).getTime();
+                if (ageMs > 60 * 60 * 1000) return false;
+              }
 
               return true;
             })
@@ -100,10 +127,13 @@ export const usePOTASpots = () => {
               expire: s.expire || 0
             };
           }));
+        } else {
+          console.warn(`[POTA] Fetch failed: ${res?.status || 'no response'} ${res?.statusText || ''}`);
         }
       } catch (err) {
-        console.error('POTA error:', err);
+        console.error('[POTA] Fetch error:', err.message || err);
       } finally {
+        setLastChecked(Date.now());
         setLoading(false);
       }
     };
@@ -117,7 +147,7 @@ export const usePOTASpots = () => {
   // Refresh immediately when tab becomes visible (handles browser throttling)
   useVisibilityRefresh(() => fetchRefPOTA.current?.(), 10000);
 
-  return { data, loading };
+  return { data, loading, lastUpdated, lastChecked };
 };
 
 export default usePOTASpots;
