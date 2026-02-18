@@ -5749,6 +5749,20 @@ app.get('/api/satellites/tle', async (req, res) => {
       return res.json(tleCache.data);
     }
 
+    // 2. OFFLINE TESTING BLOCK
+    if (OFFLINE_MODE && fs.existsSync(backupFilePath)) {
+      logInfo('[Satellites] Loading OFFLINE cache from tle_backup.txt');
+      const fileContent = fs.readFileSync(backupFilePath, 'utf8');
+      const parsedData = JSON.parse(fileContent);
+      
+      tleCache = { data: parsedData, timestamp: now };
+      return res.json(parsedData);
+    }
+	
+	// C. Live Fetching (Only runs if OFFLINE_MODE is false or file is missing)
+    logDebug('[Satellites] Fetching fresh TLE data from CelesTrak...');
+	
+	 // --- COMMENT OUT THE START OF THE FETCH LOGIC IF TESTING SO AS TO NOT PULL FROM CELSTRACK TOO OFTEN AND const OFFLINE_MODE = false; // Set to false when you want live data again ---
     logDebug('[Satellites] Fetching fresh TLE data from multiple groups...');
     const tleData = {};
     
@@ -5828,7 +5842,10 @@ app.get('/api/satellites/tle', async (req, res) => {
     }
 
     tleCache = { data: tleData, timestamp: now };
+
+	// --- END OF COMMENTED OUT FETCH LOGIC --- 
     res.json(tleData);
+	
   } catch (error) {
     // Return stale cache or empty if everything fails
     res.json(tleCache.data || {});
