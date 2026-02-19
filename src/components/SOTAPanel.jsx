@@ -14,6 +14,7 @@ export const SOTAPanel = ({
   showLabelsOnMap,
   onToggleLabelsOnMap = true,
   onSpotClick,
+  onHoverSpot,
 }) => {
   return (
     <ActivatePanel
@@ -28,6 +29,7 @@ export const SOTAPanel = ({
       showLabelsOnMap={showLabelsOnMap}
       onToggleLabelsOnMap={onToggleLabelsOnMap}
       onSpotClick={onSpotClick}
+      onHoverSpot={onHoverSpot}
     />
   );
 };

@@ -17,6 +17,7 @@ export const ActivatePanel = ({
   showLabelsOnMap = true,
   onToggleLabelsOnMap,
   onSpotClick,
+  onHoverSpot,
 }) => {
   const staleMinutes = lastUpdated ? Math.floor((Date.now() - lastUpdated) / 60000) : null;
   const isStale = staleMinutes !== null && staleMinutes >= 5;
@@ -98,7 +99,6 @@ export const ActivatePanel = ({
             {data.map((spot, i) => (
               <div
                 key={`${spot.call}-${spot.ref}-${i}`}
-                onClick={() => onSpotClick?.(spot)}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '62px 62px 58px 1fr',
@@ -106,6 +106,11 @@ export const ActivatePanel = ({
                   padding: '3px 0',
                   borderBottom: i < data.length - 1 ? '1px solid var(--border-color)' : 'none',
                   cursor: 'pointer',
+                }}
+                onMouseEnter={() => onHoverSpot?.(spot)}
+                onMouseLeave={() => onHoverSpot?.(null)}
+                onClick={() => {
+                  onSpotClick?.(spot);
                 }}
               >
                 <span
