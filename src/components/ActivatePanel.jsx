@@ -1,6 +1,6 @@
 /**
- * WWFFPanel Component
- * Displays Parks on the Air activations with ON/OFF toggle
+ * ActivatePanel Component
+ * Displays <whatever> on the Air activations with ON/OFF toggle
  */
 import React from 'react';
 import CallsignLink from './CallsignLink.jsx';
@@ -8,7 +8,6 @@ import CallsignLink from './CallsignLink.jsx';
 export const ActivatePanel = ({
   name,
   shade,
-  khz,
   data,
   loading,
   lastUpdated,
