@@ -10,6 +10,18 @@ import { useState, useEffect } from 'react';
 // Each entry: { version, date, heading, features: [...] }
 const CHANGELOG = [
   {
+    version: '15.5.7',
+    date: '2026-02-19',
+    heading: 'Small change, big quality-of-life improvement.',
+    features: [
+      {
+        icon: '💾',
+        title: 'Settings Export Filenames Now Include Time',
+        desc: 'Exported settings and profile files now include the time in the filename (e.g. hamclock-current-2026-02-19-143022.json), not just the date. Multiple exports on the same day no longer silently overwrite each other — great for keeping a proper rollback history as you update. Applies to both the "Export Current State" button and named profile exports.'
+      },
+    ]
+  },
+  {
     version: '15.5.6',
     date: '2026-02-19',
     heading: 'Smarter satellites, cleaner maps, and icons that just work on Linux.',

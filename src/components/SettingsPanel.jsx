@@ -2527,7 +2527,12 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement('a');
                                     a.href = url;
-                                    a.download = `hamclock-profile-${name.replace(/\s+/g, '-').toLowerCase()}.json`;
+                                    a.download = (() => {
+                                      const now = new Date();
+                                      const date = now.toISOString().split('T')[0];
+                                      const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+                                      return `hamclock-profile-${name.replace(/\s+/g, '-').toLowerCase()}-${date}-${time}.json`;
+                                    })();
                                     a.click();
                                     URL.revokeObjectURL(url);
                                     setProfileMessage({ type: 'success', text: `Exported "${name}"` });
@@ -2805,7 +2810,12 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `hamclock-current-${new Date().toISOString().split('T')[0]}.json`;
+                    a.download = (() => {
+                        const now = new Date();
+                        const date = now.toISOString().split('T')[0];
+                        const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+                        return `hamclock-current-${date}-${time}.json`;
+                      })();
                     a.click();
                     URL.revokeObjectURL(url);
                     setProfileMessage({ type: 'success', text: 'Exported current state' });
