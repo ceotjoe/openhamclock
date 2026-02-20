@@ -20,6 +20,7 @@ import {
   RotatorPanel,
   DXpeditionPanel,
   PSKReporterPanel,
+  APRSPanel,
   WeatherPanel,
   AmbientPanel,
   AnalogClockPanel,
@@ -82,6 +83,7 @@ export const DockableApp = ({
   filteredSatellites,
   pskReporter,
   wsjtx,
+  aprsData,
   filteredPskSpots,
   wsjtxMapSpots,
 
@@ -106,6 +108,7 @@ export const DockableApp = ({
   toggleSatellites,
   togglePSKReporter,
   toggleWSJTX,
+  toggleAPRS,
   toggleRotatorBearing,
   hoveredSpot,
   setHoveredSpot,
@@ -155,6 +158,7 @@ export const DockableApp = ({
   const togglePSKReporterEff = useInternalMapLayers ? internalMap.togglePSKReporter : togglePSKReporter;
   const toggleWSJTXEff = useInternalMapLayers ? internalMap.toggleWSJTX : toggleWSJTX;
   const toggleRotatorBearingEff = useInternalMapLayers ? internalMap.toggleRotatorBearing : toggleRotatorBearing;
+  const toggleAPRSEff = useInternalMapLayers ? internalMap.toggleAPRS : toggleAPRS;
 
   // Per-panel zoom levels (persisted)
   const [panelZoom, setPanelZoom] = useState(() => {
@@ -281,6 +285,7 @@ export const DockableApp = ({
       pota: { name: 'POTA', icon: '🏕️' },
       wwff: { name: 'WWFF', icon: '🌲' },
       sota: { name: 'SOTA', icon: '⛰️' },
+      aprs: { name: 'APRS', icon: '📍' },
       ...(isLocalInstall ? { rotator: { name: 'Rotator', icon: '🧭' } } : {}),
       contests: { name: 'Contests', icon: '🏆' },
       ...(hasAmbient ? { ambient: { name: 'Ambient Weather', icon: '🌦️' } } : {}),
@@ -474,6 +479,9 @@ export const DockableApp = ({
         showPSKReporter={mapLayersEff.showPSKReporter}
         showWSJTX={mapLayersEff.showWSJTX}
         showDXNews={mapLayersEff.showDXNews}
+        showAPRS={mapLayersEff.showAPRS}
+        aprsStations={aprsData?.filteredStations}
+        aprsWatchlistCalls={aprsData?.allWatchlistCalls}
         // ✅ Rotator bearing overlay support
         showRotatorBearing={mapLayersEff.showRotatorBearing}
         rotatorAzimuth={rot.azimuth}
@@ -684,6 +692,18 @@ export const DockableApp = ({
               onHoverSpot={setHoveredSpot}
               showLabelsOnMap={mapLayersEff.showSOTALabels}
               onToggleLabelsOnMap={toggleSOTALabelsEff}
+              onSpotClick={handleSpotClick}
+            />
+          );
+          break;
+
+        case 'aprs':
+          content = (
+            <APRSPanel
+              aprsData={aprsData}
+              showOnMap={mapLayersEff.showAPRS}
+              onToggleMap={toggleAPRSEff}
+              onHoverSpot={setHoveredSpot}
               onSpotClick={handleSpotClick}
             />
           );

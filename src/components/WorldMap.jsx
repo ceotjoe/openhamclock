@@ -94,6 +94,9 @@ export const WorldMap = ({
   showSOTALabels = true,
   showPSKReporter,
   showWSJTX,
+  showAPRS,
+  aprsStations,
+  aprsWatchlistCalls,
   onSpotClick,
   hoveredSpot,
   callsign = 'N0CALL',
@@ -128,6 +131,7 @@ export const WorldMap = ({
   const dxPathsMarkersRef = useRef([]);
   const pskMarkersRef = useRef([]);
   const wsjtxMarkersRef = useRef([]);
+  const aprsMarkersRef = useRef([]);
   const countriesLayerRef = useRef([]);
   const dxLockedRef = useRef(dxLocked);
   const rotatorLineRef = useRef(null);
@@ -1588,6 +1592,72 @@ export const WorldMap = ({
       });
     }
   }, [wsjtxSpots, showWSJTX, deLocation, bandColorVersion, bandPassesMapFilter]);
+
+  // Update APRS markers
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    aprsMarkersRef.current.forEach((m) => map.removeLayer(m));
+    aprsMarkersRef.current = [];
+
+    if (showAPRS && aprsStations && aprsStations.length > 0) {
+      const watchSet = aprsWatchlistCalls || new Set();
+
+      aprsStations.forEach((station) => {
+        const lat = parseFloat(station.lat);
+        const lon = parseFloat(station.lon);
+        if (isNaN(lat) || isNaN(lon)) return;
+
+        const isWatched = watchSet.has?.(station.call) || watchSet.has?.(station.ssid);
+        const color = isWatched ? '#f59e0b' : '#22d3ee'; // amber for watched, cyan for regular
+        const size = isWatched ? 7 : 5;
+
+        try {
+          // Triangle marker for APRS stations (distinct from circles/diamonds)
+          replicatePoint(lat, lon).forEach(([rLat, rLon]) => {
+            const marker = L.marker([rLat, rLon], {
+              icon: L.divIcon({
+                className: '',
+                html: `<div style="
+                  width: 0; height: 0;
+                  border-left: ${size}px solid transparent;
+                  border-right: ${size}px solid transparent;
+                  border-bottom: ${size * 1.6}px solid ${color};
+                  filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
+                  opacity: 0.9;
+                "></div>`,
+                iconSize: [size * 2, size * 1.6],
+                iconAnchor: [size, size * 1.6],
+              }),
+              zIndexOffset: isWatched ? 5000 : 1000,
+            });
+
+            const ageStr = station.age < 1 ? 'now' : station.age < 60 ? `${station.age}m ago` : `${Math.floor(station.age / 60)}h ago`;
+
+            marker
+              .bindPopup(`
+                <b data-qrz-call="${esc(station.call)}" style="cursor:pointer">${esc(station.ssid || station.call)}</b>
+                ${isWatched ? ' <span style="color:#f59e0b">★</span>' : ''}<br>
+                <span style="color:#888;font-size:11px">${ageStr}</span><br>
+                ${station.speed > 0 ? `Speed: ${station.speed} kt<br>` : ''}
+                ${station.altitude ? `Alt: ${station.altitude} ft<br>` : ''}
+                ${station.comment ? `<span style="font-size:11px;color:#aaa">${esc(station.comment.substring(0, 80))}</span>` : ''}
+              `)
+              .addTo(map);
+
+            if (onSpotClick) {
+              marker.on('click', () => onSpotClick({ call: station.call, lat, lon }));
+            }
+
+            aprsMarkersRef.current.push(marker);
+          });
+        } catch (err) {
+          // skip bad station
+        }
+      });
+    }
+  }, [aprsStations, showAPRS, aprsWatchlistCalls]);
 
   const openBandColorEditor = (band) => {
     setEditingBand(band);
