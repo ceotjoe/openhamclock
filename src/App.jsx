@@ -195,7 +195,16 @@ const App = () => {
   } = useTimeState(config.location, dxLocation, config.timezone);
 
   const filteredPskSpots = useMemo(() => {
-    const allSpots = [...(pskReporter.txReports || []), ...(pskReporter.rxReports || [])];
+    // Apply direction filter: 'tx' = only my transmissions, 'rx' = only what I hear, default = both
+    const dir = pskFilters?.direction;
+    let allSpots;
+    if (dir === 'tx') {
+      allSpots = [...(pskReporter.txReports || [])];
+    } else if (dir === 'rx') {
+      allSpots = [...(pskReporter.rxReports || [])];
+    } else {
+      allSpots = [...(pskReporter.txReports || []), ...(pskReporter.rxReports || [])];
+    }
     if (!pskFilters?.bands?.length && !pskFilters?.grids?.length && !pskFilters?.modes?.length) {
       return allSpots;
     }

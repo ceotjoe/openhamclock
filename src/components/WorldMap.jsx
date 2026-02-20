@@ -1404,6 +1404,7 @@ export const WorldMap = ({
           // For RX spots (someone transmitted → you received): show the sender (remote station)
           const displayCall = spot.direction === 'rx' ? spot.sender : spot.receiver || spot.sender;
           const dirLabel = spot.direction === 'rx' ? 'RX' : 'TX';
+          const isRx = spot.direction === 'rx';
           const freqMHzRaw = spot.freqMHz || (spot.freq ? spot.freq / 1000000 : null);
           const band = normalizeBandKey(spot.band) || bandFromAnyFrequency(freqMHzRaw || spot.freq);
           if (!bandPassesMapFilter(band)) return;
@@ -1413,9 +1414,9 @@ export const WorldMap = ({
 
           try {
             // Draw line from DE to spot location
+            // TX = solid line (my signal going out), RX = dashed line (signals coming in)
             const points = getGreatCirclePoints(deLocation.lat, deLocation.lon, spotLat, spotLon, 50);
 
-            // Render polyline on all 3 world copies
             if (
               points &&
               Array.isArray(points) &&
@@ -1425,24 +1426,46 @@ export const WorldMap = ({
               replicatePath(points).forEach((copy) => {
                 const line = L.polyline(copy, {
                   color: bandColor,
-                  weight: 1.5,
-                  opacity: 0.5,
-                  dashArray: '4, 4',
+                  weight: isRx ? 1.5 : 2,
+                  opacity: isRx ? 0.4 : 0.6,
+                  dashArray: isRx ? '4, 6' : null,
                 }).addTo(map);
                 pskMarkersRef.current.push(line);
               });
             }
 
-            // Render circleMarker on all 3 world copies
+            // TX = circle marker, RX = diamond marker (colorblind-friendly shape distinction)
             replicatePoint(spotLat, spotLon).forEach(([rLat, rLon]) => {
-              const circle = L.circleMarker([rLat, rLon], {
-                radius: 4,
-                fillColor: bandColor,
-                color: '#fff',
-                weight: 1,
-                opacity: 0.9,
-                fillOpacity: 0.8,
-              })
+              let marker;
+              if (isRx) {
+                // Diamond marker for RX
+                marker = L.marker([rLat, rLon], {
+                  icon: L.divIcon({
+                    className: '',
+                    html: `<div style="
+                      width: 8px; height: 8px;
+                      background: ${bandColor};
+                      border: 1px solid #fff;
+                      transform: rotate(45deg);
+                      opacity: 0.9;
+                    "></div>`,
+                    iconSize: [8, 8],
+                    iconAnchor: [4, 4],
+                  }),
+                });
+              } else {
+                // Circle marker for TX
+                marker = L.circleMarker([rLat, rLon], {
+                  radius: 4,
+                  fillColor: bandColor,
+                  color: '#fff',
+                  weight: 1,
+                  opacity: 0.9,
+                  fillOpacity: 0.8,
+                });
+              }
+
+              marker
                 .bindPopup(
                   `
                 <b data-qrz-call="${esc(displayCall)}" style="cursor:pointer">${esc(displayCall)}</b> <span style="color:#888;font-size:10px">${dirLabel}</span><br>
@@ -1453,10 +1476,10 @@ export const WorldMap = ({
                 .addTo(map);
 
               if (onSpotClick) {
-                circle.on('click', () => onSpotClick(spot));
+                marker.on('click', () => onSpotClick(spot));
               }
 
-              pskMarkersRef.current.push(circle);
+              pskMarkersRef.current.push(marker);
             });
           } catch (err) {
             console.warn('Error rendering PSKReporter spot:', err);
