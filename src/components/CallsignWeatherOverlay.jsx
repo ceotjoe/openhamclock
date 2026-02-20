@@ -219,3 +219,5 @@ export function CallsignWeatherOverlay({ hoveredSpot, enabled, units = 'imperial
     </div>
   );
 }
+
+export default CallsignWeatherOverlay;

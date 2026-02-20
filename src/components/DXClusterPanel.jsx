@@ -23,6 +23,41 @@ export const DXClusterPanel = ({
   onToggleMap,
 }) => {
   const { t } = useTranslation();
+
+  const parseSpotTimeToTimestamp = (spot) => {
+    if (spot?.timestamp && Number.isFinite(spot.timestamp)) {
+      return spot.timestamp;
+    }
+
+    const raw = typeof spot?.time === 'string' ? spot.time.trim() : '';
+    const m = raw.match(/^(\d{2}):(\d{2})z$/i);
+    if (!m) return null;
+
+    const hh = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh > 23 || mm > 59) return null;
+
+    const now = new Date();
+    let ts = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hh, mm, 0, 0);
+
+    // Handle day rollover near UTC midnight.
+    if (ts - Date.now() > 5 * 60 * 1000) {
+      ts -= 24 * 60 * 60 * 1000;
+    }
+
+    return ts;
+  };
+
+  const formatSpotTimeLabel = (spot) => {
+    const ts = parseSpotTimeToTimestamp(spot);
+    if (!ts) return spot?.time || '';
+
+    const utc = new Date(ts);
+    const hh = String(utc.getUTCHours()).padStart(2, '0');
+    const mm = String(utc.getUTCMinutes()).padStart(2, '0');
+    return `${hh}:${mm}z`;
+  };
+
   const getActiveFilterCount = () => {
     let count = 0;
     if (filters?.continents?.length) count++;
@@ -190,7 +225,7 @@ export const DXClusterPanel = ({
                 }}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '55px 1fr 1fr auto',
+                  gridTemplateColumns: '55px 1fr auto 42px',
                   gap: '6px',
                   padding: '5px 6px',
                   borderRadius: '3px',
@@ -228,6 +263,15 @@ export const DXClusterPanel = ({
                   }}
                 >
                   de <CallsignLink call={spot.spotter || '?'} color="var(--text-muted)" fontSize="10px" />
+                </div>
+                <div
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontSize: '10px',
+                    alignSelf: 'center',
+                  }}
+                >
+                  {formatSpotTimeLabel(spot)}
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>{spot.time || ''}</div>
               </div>

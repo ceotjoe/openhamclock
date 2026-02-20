@@ -318,10 +318,15 @@ export const WorldMap = ({
       // Prevent map click (moving DX) from firing for interactive markers
       try {
         const L = window.L;
-        if (L?.DomEvent) L.DomEvent.stop(e);
-        else {
-          e?.originalEvent?.preventDefault?.();
-          e?.originalEvent?.stopPropagation?.();
+        const oe = e?.originalEvent;
+        if (L?.DomEvent) {
+          if (oe) L.DomEvent.stop(oe);
+          // extra safety: stop any remaining propagation
+          if (oe?.stopImmediatePropagation) oe.stopImmediatePropagation();
+        } else {
+          oe?.preventDefault?.();
+          oe?.stopPropagation?.();
+          if (oe?.stopImmediatePropagation) oe.stopImmediatePropagation();
         }
       } catch {}
 
@@ -487,6 +492,9 @@ export const WorldMap = ({
       attribution: MAP_STYLES[mapStyle]?.attribution,
       noWrap: false,
       crossOrigin: 'anonymous',
+
+      // NASA GIBS tiles only cover -180..180; other tile providers wrap naturally
+
       ...(mapStyle === 'MODIS'
         ? {
             bounds: [

@@ -53,6 +53,7 @@ export const SettingsPanel = ({
   const [rigHost, setRigHost] = useState(config?.rigControl?.host || 'http://localhost');
   const [rigPort, setRigPort] = useState(config?.rigControl?.port || 5555);
   const [tuneEnabled, setTuneEnabled] = useState(config?.rigControl?.tuneEnabled || false);
+  const [autoMode, setAutoMode] = useState(config?.rigControl?.autoMode !== false);
   const [satelliteSearch, setSatelliteSearch] = useState('');
   const isLocalInstall = useLocalInstall();
   const [rotatorEnabled, setRotatorEnabled] = useState(() => {
@@ -146,6 +147,7 @@ export const SettingsPanel = ({
       setRigHost(config.rigControl?.host || 'http://localhost');
       setRigPort(config.rigControl?.port || 5555);
       setTuneEnabled(config.rigControl?.tuneEnabled || false);
+      setAutoMode(config.rigControl?.autoMode !== false);
       if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
       }
@@ -358,7 +360,8 @@ export const SettingsPanel = ({
       lowMemoryMode,
       units,
       propagation: { mode: propMode, power: parseFloat(propPower) || 100 },
-      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled },
+
+      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled, autoMode },
     });
     onClose();
   };
@@ -1280,6 +1283,23 @@ export const SettingsPanel = ({
                         </div>
                       </div>
                     </div>
+
+                    <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={autoMode}
+                        onChange={(e) => setAutoMode(e.target.checked)}
+                        style={{ marginRight: '8px' }}
+                      />
+                      <div>
+                        <span style={{ color: 'var(--text-primary)', fontSize: '13px' }}>
+                          {t('station.settings.rigControl.autoMode')}
+                        </span>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          {t('station.settings.rigControl.autoMode.hint')}
+                        </div>
+                      </div>
+                    </div>
                   </>
                 )}
               </div>
@@ -2149,6 +2169,17 @@ export const SettingsPanel = ({
                 marginBottom: '16px',
               }}
             >
+              <div
+                style={{
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  color: 'var(--text-muted)',
+                  marginBottom: '10px',
+                }}
+              >
+                Map Overlays
+              </div>
               <label
                 style={{
                   display: 'flex',
@@ -2183,9 +2214,33 @@ export const SettingsPanel = ({
             </div>
 
             {layers.length > 0 ? (
-              layers
-                .filter((layer) => layer.category !== 'satellites') // Correctly filter out satellites
-                .map((layer) => (
+              (() => {
+                const categoryOrder = [
+                  { key: 'propagation', label: '📡 Propagation' },
+                  { key: 'amateur', label: '📻 Amateur Radio' },
+                  { key: 'weather', label: '🌤️ Weather' },
+                  { key: 'space-weather', label: '☀️ Space Weather' },
+                  { key: 'hazards', label: '⚠️ Natural Hazards' },
+                  { key: 'geology', label: '🌍 Geology' },
+                  { key: 'overlay', label: '🗺️ Map Overlays' },
+                ];
+
+                const nonSatLayers = layers.filter((l) => l.category !== 'satellites');
+                const grouped = {};
+                nonSatLayers.forEach((l) => {
+                  const cat = l.category || 'overlay';
+                  if (!grouped[cat]) grouped[cat] = [];
+                  grouped[cat].push(l);
+                });
+                Object.values(grouped).forEach((arr) =>
+                  arr.sort((a, b) => {
+                    const nameA = (a.name.startsWith('plugins.') ? t(a.name) : a.name).toLowerCase();
+                    const nameB = (b.name.startsWith('plugins.') ? t(b.name) : b.name).toLowerCase();
+                    return nameA.localeCompare(nameB);
+                  }),
+                );
+
+                const renderLayerCard = (layer) => (
                   <div
                     key={layer.id}
                     style={{
@@ -2204,24 +2259,12 @@ export const SettingsPanel = ({
                         marginBottom: '8px',
                       }}
                     >
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          cursor: 'pointer',
-                          flex: 1,
-                        }}
-                      >
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1 }}>
                         <input
                           type="checkbox"
                           checked={layer.enabled}
                           onChange={() => handleToggleLayer(layer.id)}
-                          style={{
-                            width: '18px',
-                            height: '18px',
-                            cursor: 'pointer',
-                          }}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                         />
                         <span style={{ fontSize: '18px' }}>{layer.icon}</span>
                         <div>
@@ -2236,30 +2279,12 @@ export const SettingsPanel = ({
                             {layer.name.startsWith('plugins.') ? t(layer.name) : layer.name}
                           </div>
                           {layer.description && (
-                            <div
-                              style={{
-                                fontSize: '11px',
-                                color: 'var(--text-muted)',
-                                marginTop: '2px',
-                              }}
-                            >
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                               {layer.description.startsWith('plugins.') ? t(layer.description) : layer.description}
                             </div>
                           )}
                         </div>
                       </label>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          textTransform: 'uppercase',
-                          color: 'var(--text-secondary)',
-                          background: 'var(--bg-hover)',
-                          padding: '2px 8px',
-                          borderRadius: '3px',
-                        }}
-                      >
-                        {layer.category}
-                      </span>
                     </div>
 
                     {layer.enabled && (
@@ -2282,13 +2307,8 @@ export const SettingsPanel = ({
                           max="100"
                           value={layer.opacity * 100}
                           onChange={(e) => handleOpacityChange(layer.id, parseFloat(e.target.value) / 100)}
-                          style={{
-                            width: '100%',
-                            cursor: 'pointer',
-                          }}
+                          style={{ width: '100%', cursor: 'pointer' }}
                         />
-
-                        {/* CTRL+Click Reset Button - Hidden unless CTRL is pressed */}
                         {ctrlPressed &&
                           ['lightning', 'wspr', 'rbn', 'grayline', 'n3fjp_logged_qsos', 'voacap-heatmap'].includes(
                             layer.id,
@@ -2315,7 +2335,42 @@ export const SettingsPanel = ({
                       </div>
                     )}
                   </div>
-                ))
+                );
+
+                const result = [];
+                const rendered = new Set();
+                categoryOrder.forEach(({ key, label }) => {
+                  if (!grouped[key] || grouped[key].length === 0) return;
+                  result.push(
+                    <div
+                      key={`cat-${key}`}
+                      style={{
+                        fontSize: '11px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        color: 'var(--text-muted)',
+                        marginBottom: '8px',
+                        marginTop: result.length > 0 ? '16px' : '0',
+                        paddingBottom: '4px',
+                        borderBottom: '1px solid var(--border-color)',
+                      }}
+                    >
+                      {label}
+                    </div>,
+                  );
+                  grouped[key].forEach((layer) => {
+                    result.push(renderLayerCard(layer));
+                    rendered.add(layer.id);
+                  });
+                });
+                // Any uncategorized leftovers
+                nonSatLayers
+                  .filter((l) => !rendered.has(l.id))
+                  .forEach((layer) => {
+                    result.push(renderLayerCard(layer));
+                  });
+                return result;
+              })()
             ) : (
               <div
                 style={{
@@ -2997,7 +3052,12 @@ export const SettingsPanel = ({
                                     const url = URL.createObjectURL(blob);
                                     const a = document.createElement('a');
                                     a.href = url;
-                                    a.download = `hamclock-profile-${name.replace(/\s+/g, '-').toLowerCase()}.json`;
+                                    a.download = (() => {
+                                      const now = new Date();
+                                      const date = now.toISOString().split('T')[0];
+                                      const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+                                      return `hamclock-profile-${name.replace(/\s+/g, '-').toLowerCase()}-${date}-${time}.json`;
+                                    })();
                                     a.click();
                                     URL.revokeObjectURL(url);
                                     setProfileMessage({ type: 'success', text: `Exported "${name}"` });
@@ -3372,7 +3432,12 @@ export const SettingsPanel = ({
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `hamclock-current-${new Date().toISOString().split('T')[0]}.json`;
+                    a.download = (() => {
+                      const now = new Date();
+                      const date = now.toISOString().split('T')[0];
+                      const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+                      return `hamclock-current-${date}-${time}.json`;
+                    })();
                     a.click();
                     URL.revokeObjectURL(url);
                     setProfileMessage({ type: 'success', text: 'Exported current state' });
