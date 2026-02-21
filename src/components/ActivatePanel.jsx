@@ -148,7 +148,7 @@ export const ActivatePanel = ({
           </div>
         ) : (
           <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '10px', fontSize: '11px' }}>
-            No WWFF spots
+            No {name} spots
           </div>
         )}
       </div>
