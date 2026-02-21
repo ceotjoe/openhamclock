@@ -379,5 +379,5 @@
   "propagation.heatmap.tooltip.stoplight": "切换至红绿灯颜色 (绿色=优良)",
   "app.legend.sun": "太阳",
   "app.legend.moon": "月亮",
-  "propagation.heatmap.tooltip.stoplight": "Switch to stoplight colors (green=good)"
+  "propagation.heatmap.tooltip.stoplight": "切换至红绿灯颜色 (绿色=优良)"
 }
