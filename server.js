@@ -7536,93 +7536,151 @@ const HAM_SATELLITES = {
 };
 
 let tleCache = { data: null, timestamp: 0 };
-const TLE_CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours
+const TLE_CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 hours — TLEs don't change that fast
+const TLE_STALE_SERVE_LIMIT = 48 * 60 * 60 * 1000; // Serve stale cache up to 48h while retrying
+let tleNegativeCache = 0; // Timestamp of last total failure
+const TLE_NEGATIVE_TTL = 30 * 60 * 1000; // 30 min backoff after all sources fail
+
+// TLE data sources in priority order — automatic failover
+const TLE_SOURCES = {
+  celestrak: {
+    name: 'CelesTrak',
+    fetchGroups: async (groups, signal) => {
+      const tleData = {};
+      for (const group of groups) {
+        try {
+          const res = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, {
+            headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` }, signal,
+          });
+          if (res.ok) parseTleText(await res.text(), tleData, group);
+          else if (res.status === 429 || res.status === 403) throw new Error(`CelesTrak returned ${res.status} (rate limited or banned)`);
+        } catch (e) {
+          if (e.message?.includes('rate limited') || e.message?.includes('banned')) throw e; // Bubble up to trigger failover
+          logDebug(`[Satellites] CelesTrak group ${group} failed: ${e.message}`);
+        }
+      }
+      return tleData;
+    },
+  },
+  celestrak_legacy: {
+    name: 'CelesTrak (legacy)',
+    fetchGroups: async (groups, signal) => {
+      const tleData = {};
+      // Legacy domain uses different URL format
+      const legacyMap = { amateur: 'amateur', weather: 'weather', goes: 'goes' };
+      for (const group of groups) {
+        try {
+          const res = await fetch(`https://celestrak.com/NORAD/elements/${legacyMap[group] || group}.txt`, {
+            headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` }, signal,
+          });
+          if (res.ok) parseTleText(await res.text(), tleData, group);
+        } catch (e) {
+          logDebug(`[Satellites] CelesTrak legacy group ${group} failed: ${e.message}`);
+        }
+      }
+      return tleData;
+    },
+  },
+  amsat: {
+    name: 'AMSAT',
+    fetchGroups: async (_groups, signal) => {
+      // AMSAT provides a single combined file for amateur satellites
+      const tleData = {};
+      try {
+        const res = await fetch('https://www.amsat.org/tle/current/nasabare.txt', {
+          headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` }, signal,
+        });
+        if (res.ok) parseTleText(await res.text(), tleData, 'amateur');
+      } catch (e) {
+        logDebug(`[Satellites] AMSAT TLE failed: ${e.message}`);
+      }
+      return tleData;
+    },
+  },
+};
+
+// Configurable source order via env var: TLE_SOURCES=celestrak,amsat,celestrak_legacy
+const TLE_SOURCE_ORDER = (process.env.TLE_SOURCES || 'celestrak,celestrak_legacy,amsat')
+  .split(',').map((s) => s.trim()).filter((s) => TLE_SOURCES[s]);
+
+function parseTleText(text, tleData, group) {
+  const lines = text.trim().split('\n');
+  for (let i = 0; i < lines.length - 2; i += 3) {
+    const name = lines[i]?.trim();
+    const line1 = lines[i + 1]?.trim();
+    const line2 = lines[i + 2]?.trim();
+    if (name && line1 && line1.startsWith('1 ')) {
+      const noradId = parseInt(line1.substring(2, 7));
+      const alreadyExists = Object.values(tleData).some((sat) => sat.norad === noradId);
+      if (alreadyExists) continue;
+      const key = name.replace(/[^A-Z0-9\-]/g, '_').toUpperCase();
+      const hamSat = Object.values(HAM_SATELLITES).find((s) => s.norad === noradId);
+      if (hamSat) {
+        tleData[key] = { ...hamSat, tle1: line1, tle2: line2 };
+      } else {
+        tleData[key] = {
+          norad: noradId, name, color: '#cccccc',
+          priority: group === 'amateur' ? 3 : 4, mode: 'Unknown',
+          tle1: line1, tle2: line2,
+        };
+      }
+    }
+  }
+}
+
 app.get('/api/satellites/tle', async (req, res) => {
   try {
     const now = Date.now();
 
-    // Return memory cache if fresh (6-hour window)
+    // Return memory cache if fresh
     if (tleCache.data && now - tleCache.timestamp < TLE_CACHE_DURATION) {
       return res.json(tleCache.data);
     }
 
-    logDebug('[Satellites] Fetching fresh TLE data from multiple groups...');
-    const tleData = {};
+    // If all sources recently failed, serve stale cache or empty
+    if (now - tleNegativeCache < TLE_NEGATIVE_TTL) {
+      if (tleCache.data && now - tleCache.timestamp < TLE_STALE_SERVE_LIMIT) {
+        res.set('X-TLE-Stale', 'true');
+        return res.json(tleCache.data);
+      }
+      return res.json(tleCache.data || {});
+    }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
-    // This list tells the server to look in all three CelesTrak folders
     const groups = ['amateur', 'weather', 'goes'];
+    let tleData = {};
+    let sourceUsed = null;
 
-    for (const group of groups) {
+    // Try each source in order until one succeeds with meaningful data
+    for (const sourceKey of TLE_SOURCE_ORDER) {
+      const source = TLE_SOURCES[sourceKey];
       try {
-        const response = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${group}&FORMAT=tle`, {
-          headers: { 'User-Agent': 'OpenHamClock/3.3' },
-          signal: controller.signal,
-        });
-
-        if (response.ok) {
-          const text = await response.text();
-          const lines = text.trim().split('\n');
-          // Parse 3 lines per satellite: Name, Line 1, Line 2
-          for (let i = 0; i < lines.length - 2; i += 3) {
-            const name = lines[i]?.trim();
-            const line1 = lines[i + 1]?.trim();
-            const line2 = lines[i + 2]?.trim();
-            if (name && line1 && line1.startsWith('1 ')) {
-              const noradId = parseInt(line1.substring(2, 7));
-
-              // Skip if this NORAD ID already exists (prevent duplicates)
-              const alreadyExists = Object.values(tleData).some((sat) => sat.norad === noradId);
-              if (alreadyExists) continue;
-
-              // Create a sanitized key from the satellite name
-              const key = name.replace(/[^A-Z0-9\-]/g, '_').toUpperCase();
-
-              // Check if we have metadata in HAM_SATELLITES
-              const hamSat = Object.values(HAM_SATELLITES).find((s) => s.norad === noradId);
-
-              if (hamSat) {
-                // Use defined metadata from HAM_SATELLITES
-                tleData[key] = { ...hamSat, tle1: line1, tle2: line2 };
-              } else {
-                // Include all satellites with default metadata
-                tleData[key] = {
-                  norad: noradId,
-                  name: name,
-                  color: '#cccccc',
-                  priority: group === 'amateur' ? 3 : 4,
-                  mode: 'Unknown',
-                  tle1: line1,
-                  tle2: line2,
-                };
-              }
-            }
-          }
+        tleData = await source.fetchGroups(groups, controller.signal);
+        if (Object.keys(tleData).length >= 5) {
+          sourceUsed = source.name;
+          break; // Got enough data
         }
+        logDebug(`[Satellites] ${source.name} returned only ${Object.keys(tleData).length} satellites, trying next source...`);
       } catch (e) {
-        logDebug(`[Satellites] Failed to fetch group: ${group}`);
+        logWarn(`[Satellites] ${source.name} failed: ${e.message}`);
       }
     }
+
     clearTimeout(timeout);
 
-    // Check if ISS (NORAD 25544) was already added with any key
+    // ISS fallback — try CelesTrak direct if ISS not found
     const issExists = Object.values(tleData).some((sat) => sat.norad === 25544);
-
-    // Fallback for ISS if it wasn't found in the groups above
     if (!issExists) {
       try {
-        const issRes = await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle');
+        const issRes = await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle', {
+          signal: AbortSignal.timeout(5000),
+        });
         if (issRes.ok) {
-          const issText = await issRes.text();
-          const issLines = issText.trim().split('\n');
+          const issLines = (await issRes.text()).trim().split('\n');
           if (issLines.length >= 3) {
-            tleData['ISS'] = {
-              ...HAM_SATELLITES['ISS'],
-              tle1: issLines[1].trim(),
-              tle2: issLines[2].trim(),
-            };
+            tleData['ISS'] = { ...HAM_SATELLITES['ISS'], tle1: issLines[1].trim(), tle2: issLines[2].trim() };
           }
         }
       } catch (e) {
@@ -7630,7 +7688,19 @@ app.get('/api/satellites/tle', async (req, res) => {
       }
     }
 
-    tleCache = { data: tleData, timestamp: now };
+    if (Object.keys(tleData).length > 0) {
+      tleCache = { data: tleData, timestamp: now };
+      if (sourceUsed) logInfo(`[Satellites] Loaded ${Object.keys(tleData).length} satellites from ${sourceUsed}`);
+    } else {
+      // All sources failed — set negative cache to avoid hammering
+      tleNegativeCache = now;
+      logWarn('[Satellites] All TLE sources failed, backing off for 30 min');
+      // Serve stale if available
+      if (tleCache.data && now - tleCache.timestamp < TLE_STALE_SERVE_LIMIT) {
+        res.set('X-TLE-Stale', 'true');
+        return res.json(tleCache.data);
+      }
+    }
 
     res.json(tleData);
   } catch (error) {
