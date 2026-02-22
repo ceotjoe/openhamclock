@@ -12,9 +12,6 @@ import {
   getGreatCirclePoints,
   replicatePath,
   replicatePoint,
-  normalizeLon,
-  classifyTwilight,
-  calculateSolarElevation,
 } from '../utils/geo.js';
 import { getBandColor, getBandFromFreq } from '../utils/callsign.js';
 import {
@@ -28,7 +25,6 @@ import {
 import { createTerminator } from '../utils/terminator.js';
 import { getAllLayers } from '../plugins/layerRegistry.js';
 import useLocalInstall from '../hooks/app/useLocalInstall.js';
-import { IconSatellite, IconTag, IconSun, IconMoon } from './Icons.jsx';
 import PluginLayer from './PluginLayer.jsx';
 import AzimuthalMap from './AzimuthalMap.jsx';
 import { DXNewsTicker } from './DXNewsTicker.jsx';
@@ -48,9 +44,6 @@ function esc(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
-
-// Normalize callsign keys used for DX hover/highlight matching
-const normalizeCallsignKey = (v) => (v || '').toString().toUpperCase().trim();
 
 function windArrow(deg) {
   if (deg == null || Number.isNaN(deg)) return '';
@@ -120,9 +113,6 @@ export const WorldMap = ({
   rotatorIsStale = false,
   rotatorControlEnabled,
   onRotatorTurnRequest,
-  mySpots,
-  onToggleSatellites,
-  onHoverSpot,
 }) => {
   const { t } = useTranslation();
   const mapRef = useRef(null);
@@ -149,14 +139,6 @@ export const WorldMap = ({
   const rotatorTurnRef = useRef(onRotatorTurnRequest);
   const rotatorEnabledRef = useRef(rotatorControlEnabled);
   const deRef = useRef(deLocation);
-  const mySpotsMarkersRef = useRef([]);
-  const mySpotsLinesRef = useRef([]);
-  const satMarkersRef = useRef([]);
-  const satTracksRef = useRef([]);
-  // DX highlight state (style existing polylines via refs; no layer rebuilds)
-  const dxLineIndexRef = useRef(new Map());
-  const dxHighlightKeyRef = useRef('');
-  const dxHighlightLockedRef = useRef(false);
 
   // Calculate grid locator from DE location for plugins
   const deLocator = useMemo(() => {
@@ -206,37 +188,6 @@ export const WorldMap = ({
   const clearMapBandFilter = useCallback(() => {
     writeMapBandFilter([]);
   }, [writeMapBandFilter]);
-
-  // ── DX highlight helpers (click highlight + DX Cluster panel hover highlight) ──
-  const clearDXHighlight = useCallback(() => {
-    const prevKey = dxHighlightKeyRef.current;
-    if (!prevKey) return;
-    const prevLines = dxLineIndexRef.current.get(prevKey) || [];
-    prevLines.forEach((ln) => {
-      const base = ln._ohcBaseStyle || {
-        color: ln.options.color,
-        weight: ln.options.weight,
-        opacity: ln.options.opacity,
-      };
-      ln.setStyle(base);
-    });
-    dxHighlightKeyRef.current = '';
-  }, []);
-
-  const setDXHighlight = useCallback(
-    (key) => {
-      const k = normalizeCallsignKey(key);
-      if (!k) return;
-      if (dxHighlightKeyRef.current === k) return;
-      clearDXHighlight();
-      dxHighlightKeyRef.current = k;
-      const lines = dxLineIndexRef.current.get(k) || [];
-      lines.forEach((ln) => {
-        ln.setStyle({ color: '#ffffff', weight: 3, opacity: 1 });
-      });
-    },
-    [clearDXHighlight],
-  );
 
   // Expose DE location to window for plugins (e.g., RBN)
   useEffect(() => {
