@@ -77,8 +77,6 @@ export const DockableApp = ({
   // Weather
   localWeather,
   dxWeather,
-  tempUnit,
-  setTempUnit,
   showDxWeather,
 
   // Space weather & solar
@@ -402,17 +400,7 @@ export const DockableApp = ({
         </div>
       </div>
 
-      <WeatherPanel
-        weatherData={localWeather}
-        tempUnit={tempUnit}
-        onTempUnitChange={(unit) => {
-          setTempUnit(unit);
-          try {
-            localStorage.setItem('openhamclock_tempUnit', unit);
-          } catch {}
-        }}
-        nodeId={nodeId}
-      />
+      <WeatherPanel weatherData={localWeather} units={config.units} nodeId={nodeId} />
     </div>
   );
 
@@ -512,19 +500,7 @@ export const DockableApp = ({
           </div>
         </div>
 
-        {showDxWeather && (
-          <WeatherPanel
-            weatherData={dxWeather}
-            tempUnit={tempUnit}
-            onTempUnitChange={(unit) => {
-              setTempUnit(unit);
-              try {
-                localStorage.setItem('openhamclock_tempUnit', unit);
-              } catch {}
-            }}
-            nodeId={nodeId}
-          />
-        )}
+        {showDxWeather && <WeatherPanel weatherData={dxWeather} units={config.units} nodeId={nodeId} />}
       </div>
     );
   };
@@ -858,17 +834,7 @@ export const DockableApp = ({
           );
 
         case 'ambient':
-          content = (
-            <AmbientPanel
-              tempUnit={tempUnit}
-              onTempUnitChange={(unit) => {
-                setTempUnit(unit);
-                try {
-                  localStorage.setItem('openhamclock_tempUnit', unit);
-                } catch {}
-              }}
-            />
-          );
+          content = <AmbientPanel tempUnit={config.units === 'metric' ? 'C' : 'F'} />;
           break;
 
         case 'rig-control':
@@ -907,7 +873,6 @@ export const DockableApp = ({
       deSunTimes,
       dxSunTimes,
       showDxWeather,
-      tempUnit,
       localWeather,
       dxWeather,
       solarIndices,
