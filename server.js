@@ -383,51 +383,15 @@ if (ITURHFPROP_URL) {
 }
 
 // Middleware — Security
-// A proper CSP + Permissions-Policy signals legitimacy to endpoint-protection
-// software (Bitdefender, Norton, etc.) that use header presence as a trust signal.
+// Helmet sets X-Content-Type-Options, X-Frame-Options, HSTS, etc.
+// These headers signal legitimacy to endpoint-protection software (Bitdefender, etc.)
+// CSP is disabled because the app loads scripts, styles, images, and data from
+// dozens of external services (Leaflet CDN, Google Fonts, Open-Meteo, NOAA SWPC,
+// NASA SDO/GIBS, PSKReporter, tile CDNs, etc.) — a restrictive CSP breaks everything.
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // React/Vite HMR needs inline+eval
-        styleSrc: ["'self'", "'unsafe-inline'"], // Inline styles used throughout
-        imgSrc: [
-          "'self'",
-          'data:',
-          'blob:',
-          'https://*.basemaps.cartocdn.com',
-          'https://services.arcgisonline.com',
-          'https://*.tile.openstreetmap.org',
-          'https://*.tile.opentopomap.org',
-          'https://gibs.earthdata.nasa.gov',
-          'https://cdn.jsdelivr.net',
-        ],
-        connectSrc: [
-          "'self'",
-          'wss:',
-          'ws:', // WebSocket for WSJT-X relay & dev HMR
-          'https://*.basemaps.cartocdn.com',
-          'https://services.arcgisonline.com',
-          'https://*.tile.openstreetmap.org',
-          'https://*.tile.opentopomap.org',
-          'https://gibs.earthdata.nasa.gov',
-          'https://cdn.jsdelivr.net',
-        ],
-        fontSrc: ["'self'", 'data:'],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-        frameAncestors: ["'self'"],
-      },
-    },
+    contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false, // Breaks tile loading from CDNs
-    // helmet enables these by default, but we list them explicitly for clarity:
-    // X-Content-Type-Options: nosniff
-    // X-Frame-Options: SAMEORIGIN
-    // X-XSS-Protection: 0  (modern browsers use CSP instead)
-    // Strict-Transport-Security (HSTS)
-    // X-DNS-Prefetch-Control: off
   }),
 );
 

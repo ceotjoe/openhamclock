@@ -896,7 +896,7 @@ export const WorldMap = ({
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       });
-      const m = L.marker([lat, lon], { icon: deIcon })
+      const m = L.marker([lat, lon], { icon: deIcon, zIndexOffset: 20000 })
         .bindPopup(
           `<b>DE - Your Location</b><br>${calculateGridSquare(deLocation.lat, deLocation.lon)}<br>${deLocation.lat.toFixed(4)}°, ${deLocation.lon.toFixed(4)}°`,
         )
@@ -912,7 +912,7 @@ export const WorldMap = ({
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       });
-      const m = L.marker([lat, lon], { icon: dxIcon })
+      const m = L.marker([lat, lon], { icon: dxIcon, zIndexOffset: 19000 })
         .bindPopup(
           `<b>DX - Target</b><br>${calculateGridSquare(dxLocation.lat, dxLocation.lon)}<br>${dxLocation.lat.toFixed(4)}°, ${dxLocation.lon.toFixed(4)}°`,
         )
