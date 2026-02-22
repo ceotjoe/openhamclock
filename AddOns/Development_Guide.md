@@ -16,12 +16,12 @@ Your script should start with a header that tells the browser where to run the s
 // @version      1.0
 // @description  Adds a custom feature to the clock
 // @author       YourName/Callsign
-// @match        *://*/*
+// @match        https://openhamclock.com/*
 // @grant        none
 // ==/UserScript==
 ```
 
-> **Note on `@match`**: Since OpenHamClock can be hosted on any IP or domain (local or remote), `*://*/*` is often necessary. You can also use specific filters if you know your local URL.
+> **Note on `@match`**: To ensure the safety and privacy of users, AddOns should be restricted to the official domain `https://openhamclock.com/*`. If you are developing locally, you can temporarily change this to `http://localhost:*/*`.
 
 ### 2. Designing for OpenHamClock (Styling)
 

@@ -4,7 +4,7 @@
 // @version      1.6
 // @description  Fetches and displays your latest APRS messages from aprs.fi
 // @author       DO3EET
-// @match        *://*/*
+// @match        https://openhamclock.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      aprs.fi
 // ==/UserScript==

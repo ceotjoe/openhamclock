@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  Automatically updates your station position in OpenHamClock based on APRS beacons
 // @author       DO3EET
-// @match        *://*/*
+// @match        https://openhamclock.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      aprs.fi
 // ==/UserScript==

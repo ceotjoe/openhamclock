@@ -4,7 +4,7 @@
 // @version      1.4
 // @description  Adds a portable antenna calculator for the HFJ-350M with multi-language support (DE, EN, JA)
 // @author       DO3EET
-// @match        *://*/*
+// @match        https://openhamclock.com/*
 // @grant        none
 // ==/UserScript==
 
