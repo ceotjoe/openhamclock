@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         APRS Newsfeed (Inbox) for OpenHamClock
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Fetches and displays your latest APRS messages from aprs.fi
 // @author       DO3EET
 // @match        *://*/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      aprs.fi
 // ==/UserScript==
 
 (function() {
@@ -285,33 +286,57 @@
         const status = document.getElementById("aprs-status");
         status.innerText = "Loading...";
 
-        try {
-            const url = `https://api.aprs.fi/api/get?what=msg&dst=${callsign}&apikey=${apiKey}&format=json`;
-            const response = await fetch(url);
-            const data = await response.json();
+        const url = `https://api.aprs.fi/api/get?what=msg&dst=${callsign}&apikey=${apiKey}&format=json`;
 
-            if (data.result === 'ok') {
-                renderMessages(data.entries);
-                status.innerText = `${t('last_update')}: ${new Date().toLocaleTimeString()}`;
-                
-                // Check for new messages
-                if (data.entries.length > 0) {
-                    const latest = data.entries[0].messageid;
-                    if (latest > lastMsgId && document.getElementById("aprs-news-container").style.display !== "flex") {
-                        const badge = document.getElementById("aprs-news-badge");
-                        badge.innerText = "!";
-                        badge.style.display = "flex";
+        if (typeof GM_xmlhttpRequest !== 'undefined') {
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: url,
+                onload: function(response) {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        handleResponse(data);
+                    } catch (e) {
+                        status.innerText = "Parse Error";
                     }
-                    lastMsgId = latest;
-                    localStorage.setItem('ohc_aprs_last_msgid', lastMsgId);
+                },
+                onerror: function(err) {
+                    status.innerText = "Network Error (GM)";
                 }
-            } else {
-                document.getElementById("aprs-news-content").innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-red);">${t('error_api')}: ${data.description || ''}</div>`;
-                status.innerText = "Error";
+            });
+        } else {
+            // Fallback for environments without GM_xmlhttpRequest (will likely hit CORS)
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                handleResponse(data);
+            } catch (e) {
+                document.getElementById("aprs-news-content").innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-red);">CORS Error. Use Tampermonkey/Greasemonkey!</div>`;
+                status.innerText = "CORS Error";
             }
-        } catch (e) {
-            console.error('[APRS News] Fetch error:', e);
-            status.innerText = "Network Error";
+        }
+    }
+
+    function handleResponse(data) {
+        const status = document.getElementById("aprs-status");
+        if (data.result === 'ok') {
+            renderMessages(data.entries);
+            status.innerText = `${t('last_update')}: ${new Date().toLocaleTimeString()}`;
+            
+            // Check for new messages
+            if (data.entries.length > 0) {
+                const latest = data.entries[0].messageid;
+                if (latest > lastMsgId && document.getElementById("aprs-news-container").style.display !== "flex") {
+                    const badge = document.getElementById("aprs-news-badge");
+                    badge.innerText = "!";
+                    badge.style.display = "flex";
+                }
+                lastMsgId = latest;
+                localStorage.setItem('ohc_aprs_last_msgid', lastMsgId);
+            }
+        } else {
+            document.getElementById("aprs-news-content").innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-red);">${t('error_api')}: ${data.description || ''}</div>`;
+            status.innerText = "Error";
         }
     }
 
@@ -342,3 +367,4 @@
         init();
     }
 })();
+
