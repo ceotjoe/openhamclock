@@ -10,14 +10,15 @@
  * Shows loading skeleton and error/retry states instead of disappearing
  * when weather API is rate-limited.
  */
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWeather } from '../hooks';
 import { usePanelResize } from '../contexts';
 
 export const WeatherPanel = ({
   location,
-  units = 'imperial',
+  tempUnit,
+  onTempUnitChange,
   nodeId,
   weatherData, // Optional: pre-fetched { data, loading, error } from useWeather
 }) => {
@@ -62,7 +63,7 @@ export const WeatherPanel = ({
   }, [weatherExpanded, nodeId, requestResize, resetSize]);
 
   // Use pre-fetched data if provided, otherwise fetch our own
-  const ownWeather = useWeather(weatherData ? null : location, units);
+  const ownWeather = useWeather(weatherData ? null : location, tempUnit);
   const weather = weatherData || ownWeather;
 
   const { data: w, loading, error } = weather;
@@ -127,7 +128,7 @@ export const WeatherPanel = ({
   // No data, no error, no loading — location probably not set
   if (!w) return null;
 
-  const deg = `°${w.tempUnit || (units === 'metric' ? 'C' : 'F')}`;
+  const deg = `°${w.tempUnit || tempUnit}`;
   const wind = t(`weather.unit.${w.windUnit === 'km/h' ? 'kmh' : 'mph'}`);
   const vis = t(`weather.unit.${w.visUnit === 'km' ? 'km' : 'mi'}`);
 
@@ -191,6 +192,30 @@ export const WeatherPanel = ({
             ▼
           </span>
         </div>
+        {/* F/C toggle */}
+        {onTempUnitChange && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onTempUnitChange(tempUnit === 'F' ? 'C' : 'F');
+            }}
+            style={{
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-secondary)',
+              fontSize: '10px',
+              padding: '1px 5px',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontWeight: '600',
+              flexShrink: 0,
+            }}
+            title={t('weather.switchUnit', { unit: tempUnit === 'F' ? 'C' : 'F' })}
+          >
+            °{tempUnit === 'F' ? 'C' : 'F'}
+          </button>
+        )}
       </div>
 
       {/* Error badge — show when data is stale but we have cached data */}
@@ -274,7 +299,7 @@ export const WeatherPanel = ({
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>{t('weather.pressure')}</span>
                 <span style={{ color: 'var(--text-secondary)' }}>
-                  {w.pressure} {w.pressureUnit || (units === 'metric' ? 'hPa' : 'inHg')}
+                  {w.pressure} {t('weather.hpa')}
                 </span>
               </div>
             )}

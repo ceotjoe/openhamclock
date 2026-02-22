@@ -57,6 +57,8 @@ export default function ModernLayout(props) {
     handleToggleDxLock,
     deSunTimes,
     dxSunTimes,
+    tempUnit,
+    setTempUnit,
     showDxWeather,
     currentTime,
     classicAnalogClock,
@@ -108,6 +110,13 @@ export default function ModernLayout(props) {
     if (path && path.dxLat != null && path.dxLon != null) {
       handleDXChange({ lat: path.dxLat, lon: path.dxLon });
     }
+  };
+
+  const tempUnitToggle = (unit) => {
+    setTempUnit(unit);
+    try {
+      localStorage.setItem('openhamclock_tempUnit', unit);
+    } catch {}
   };
 
   // ─── Shared map component ───
@@ -187,7 +196,7 @@ export default function ModernLayout(props) {
           <span style={{ color: 'var(--accent-purple)', fontWeight: '600' }}>{deSunTimes.sunset}</span>
         </div>
       </div>
-      <WeatherPanel weatherData={localWeather} units={config.units} />
+      <WeatherPanel weatherData={localWeather} tempUnit={tempUnit} onTempUnitChange={tempUnitToggle} />
     </div>
   );
 
@@ -253,7 +262,7 @@ export default function ModernLayout(props) {
           <span style={{ color: 'var(--accent-purple)', fontWeight: '600' }}>{dxSunTimes.sunset}</span>
         </div>
       </div>
-      {showDxWeather && <WeatherPanel weatherData={dxWeather} units={config.units} />}
+      {showDxWeather && <WeatherPanel weatherData={dxWeather} tempUnit={tempUnit} onTempUnitChange={tempUnitToggle} />}
     </div>
   );
 

@@ -30,6 +30,11 @@ export default function ClassicLayout(props) {
     handleToggleDxLock,
     deGrid,
     dxGrid,
+    deSunTimes,
+    dxSunTimes,
+    tempUnit,
+    setTempUnit,
+    showDxWeather,
     localWeather,
     spaceWeather,
     solarIndices,
@@ -39,6 +44,7 @@ export default function ClassicLayout(props) {
     sotaSpots,
     wwbotaSpots,
     mySpots,
+    satellites,
     filteredSatellites,
     mapLayers,
     dxFilters,
@@ -54,6 +60,12 @@ export default function ClassicLayout(props) {
   const mapLegendBands = ['160', '80', '40', '30', '20', '17', '15', '12', '10', '8', '6', '4'];
 
   const { tuneTo } = useRig();
+
+  // Handler for POTA/WWFF/SOTA spot clicks
+  const handleParkSpotClick = (spot) => {
+    // tuneTo() in RigContext handles spot objects and all frequency conversions
+    tuneTo(spot);
+  };
 
   return config.layout === 'classic' ? (
     <div
@@ -1266,7 +1278,7 @@ export default function ClassicLayout(props) {
             <span>
               <span style={{ marginRight: '2px' }}>{localWeather.data.icon}</span>
               <span style={{ color: 'var(--accent-cyan)', fontWeight: '600' }}>
-                {localWeather.data.temp}°{localWeather.data.tempUnit || (config.units === 'metric' ? 'C' : 'F')}
+                {localWeather.data.temp}°{localWeather.data.tempUnit || tempUnit}
               </span>
             </span>
           )}
