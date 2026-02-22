@@ -80,6 +80,16 @@ See an issue you want to fix? Claim it so others know it's being worked on:
 
 No write access required — any GitHub user can self-assign. Once assigned, feel free to ask questions in the issue thread before diving in. If you claimed something and it's no longer on your radar, just leave a comment so someone else can pick it up.
 
+### Closing an Issue
+
+Fixed the bug or confirmed a resolution? Close the issue directly:
+
+1. Leave a comment containing exactly:
+   ```
+   /close
+   ```
+2. The bot will close the issue and react with 🚀
+
 ### Submitting Code
 
 1. **Fork** the repo and create a branch from `Staging`
