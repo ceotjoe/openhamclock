@@ -77,8 +77,6 @@ export const DockableApp = ({
   // Weather
   localWeather,
   dxWeather,
-  tempUnit,
-  setTempUnit,
   showDxWeather,
 
   // Space weather & solar
@@ -122,6 +120,7 @@ export const DockableApp = ({
   toggleWWFF,
   toggleWWFFLabels,
   toggleSOTA,
+  toggleSOTALabels,
   toggleWWBOTA,
   toggleWWBOTALabels,
   toggleSatellites,
@@ -192,6 +191,7 @@ export const DockableApp = ({
   const toggleWWFFEff = useInternalMapLayers ? internalMap.toggleWWFF : toggleWWFF;
   const toggleWWFFLabelsEff = useInternalMapLayers ? internalMap.toggleWWFFLabels : toggleWWFFLabels;
   const toggleSOTAEff = useInternalMapLayers ? internalMap.toggleSOTA : toggleSOTA;
+  const toggleSOTALabelsEff = useInternalMapLayers ? internalMap.toggleSOTALabels : toggleSOTALabels;
   const toggleWWBOTAEff = useInternalMapLayers ? internalMap.toggleWWBOTA : toggleWWBOTA;
   const toggleWWBOTALabelsEff = useInternalMapLayers ? internalMap.toggleWWBOTALabels : toggleWWBOTALabels;
   const toggleSatellitesEff = useInternalMapLayers ? internalMap.toggleSatellites : toggleSatellites;
@@ -404,13 +404,7 @@ export const DockableApp = ({
 
       <WeatherPanel
         weatherData={localWeather}
-        tempUnit={tempUnit}
-        onTempUnitChange={(unit) => {
-          setTempUnit(unit);
-          try {
-            localStorage.setItem('openhamclock_tempUnit', unit);
-          } catch {}
-        }}
+        units={config.units}
         nodeId={nodeId}
       />
     </div>
@@ -515,13 +509,7 @@ export const DockableApp = ({
         {showDxWeather && (
           <WeatherPanel
             weatherData={dxWeather}
-            tempUnit={tempUnit}
-            onTempUnitChange={(unit) => {
-              setTempUnit(unit);
-              try {
-                localStorage.setItem('openhamclock_tempUnit', unit);
-              } catch {}
-            }}
+            units={config.units}
             nodeId={nodeId}
           />
         )}
@@ -860,13 +848,7 @@ export const DockableApp = ({
         case 'ambient':
           content = (
             <AmbientPanel
-              tempUnit={tempUnit}
-              onTempUnitChange={(unit) => {
-                setTempUnit(unit);
-                try {
-                  localStorage.setItem('openhamclock_tempUnit', unit);
-                } catch {}
-              }}
+              units={config.units}
             />
           );
           break;
@@ -907,7 +889,6 @@ export const DockableApp = ({
       deSunTimes,
       dxSunTimes,
       showDxWeather,
-      tempUnit,
       localWeather,
       dxWeather,
       solarIndices,
