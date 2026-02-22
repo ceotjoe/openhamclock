@@ -7,7 +7,7 @@ To use the **HFJ-350M Calculator** in Opera, follow these steps:
    - Click **Add to Opera**.
 
 2. **Add the Script**:
-   - Copy the script content from [hfj350m_calculator.user.js](./hfj350m_calculator.user.js).
+   - Copy the script content from [hfj350m_calculator.user.js](../hfj350m_calculator.user.js).
    - Open the Tampermonkey Dashboard and click the **+ (Plus)** icon to add a new script.
    - Paste the code and save.
 

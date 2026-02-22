@@ -22,8 +22,8 @@ The calculator includes data derived from the official manual for:
 
 ## How to Use
 
-1. **Install a Userscript Manager**: See the installation guides for [Firefox](./Firefox_Installation.md), [Chrome](./Chrome_Installation.md), [Brave](./Brave_Installation.md), or [Opera](./Opera_Installation.md).
-2. **Install the Script**: Load [hfj350m_calculator.user.js](./hfj350m_calculator.user.js) into your manager.
+1. **Install a Userscript Manager**: See the installation guides for [Firefox](./docs/Firefox_Installation.md), [Chrome](./docs/Chrome_Installation.md), [Brave](./docs/Brave_Installation.md), or [Opera](./docs/Opera_Installation.md).
+2. **Install the Script**: Load [hfj350m_calculator.user.js](../hfj350m_calculator.user.js) into your manager.
 3. **Open the Calculator**: Click the 📡 icon at the bottom right of your OpenHamClock.
 4. **Input**: Type a band (e.g., `20m`) or a frequency in MHz (e.g., `14.074`).
 5. **Adjust**: The tool will show you exactly how many millimeters to extend the telescope.

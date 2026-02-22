@@ -9,7 +9,7 @@ To use the **HFJ-350M Calculator** in Firefox, follow these steps:
    - Click **Add to Firefox** for your preferred manager.
 
 2. **Add the Script**:
-   - Open the [hfj350m_calculator.user.js](./hfj350m_calculator.user.js) file or copy its content.
+   - Open the [hfj350m_calculator.user.js](../hfj350m_calculator.user.js) file or copy its content.
    - **For Greasemonkey**: Click the Greasemonkey icon, select **New User Script...**, paste the code, and save.
    - **For Tampermonkey/Violentmonkey**: Click the icon, select **Create a new script...**, paste the code, and press `Ctrl+S` (or File > Save).
 

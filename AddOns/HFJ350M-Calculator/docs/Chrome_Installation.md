@@ -7,7 +7,7 @@ To use the **HFJ-350M Calculator** in Google Chrome, follow these steps:
    - Click **Add to Chrome**.
 
 2. **Add the Script**:
-   - Open the [hfj350m_calculator.user.js](./hfj350m_calculator.user.js) file or copy its content.
+   - Open the [hfj350m_calculator.user.js](../hfj350m_calculator.user.js) file or copy its content.
    - Click the Tampermonkey icon and select **Create a new script...**.
    - Delete any placeholder code, paste the script, and go to **File > Save**.
 

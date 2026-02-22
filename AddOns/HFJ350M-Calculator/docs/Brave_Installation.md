@@ -7,7 +7,7 @@ To use the **HFJ-350M Calculator** in Brave, follow these steps:
    - Click **Add to Brave**.
 
 2. **Add the Script**:
-   - Copy the content of [hfj350m_calculator.user.js](./hfj350m_calculator.user.js).
+   - Copy the content of [hfj350m_calculator.user.js](../hfj350m_calculator.user.js).
    - Click the Tampermonkey extension icon and select **Create a new script...**.
    - Paste the code and save via **File > Save**.
 
