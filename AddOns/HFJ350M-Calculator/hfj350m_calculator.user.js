@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HFJ-350M Calculator for OpenHamClock
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.3
 // @description  Adds a portable antenna calculator for the HFJ-350M with multi-language support (DE, EN, JA)
 // @author       DO3EET
 // @match        *://*/*
@@ -13,7 +13,7 @@
 
     const translations = {
         de: {
-            title: "📡 HFJ-350M Rechner",
+            title: "\uD83D\uDCE1 HFJ-350M Rechner",
             placeholder: "Band (40m) oder Frequenz (7.1)",
             band: "Band",
             range: "Bereich",
@@ -31,7 +31,6 @@
             warning_min: "Zu kurz!",
             error_not_found: "Keine Konfiguration gefunden.",
             note: "HINWEIS",
-            // Data translations
             coil_160: "Basis + 3.5 Spule + 1.8 Spule",
             coil_80: "Basis + 3.5 Spule",
             coil_40: "Basis (Keine Zusatzspule)",
@@ -44,7 +43,7 @@
             note_6: "Achtung: Terminal 5 = Common + 5"
         },
         en: {
-            title: "📡 HFJ-350M Calculator",
+            title: "\uD83D\uDCE1 HFJ-350M Calculator",
             placeholder: "Band (40m) or Freq (7.1)",
             band: "Band",
             range: "Range",
@@ -62,7 +61,6 @@
             warning_min: "Too short!",
             error_not_found: "No configuration found.",
             note: "NOTE",
-            // Data translations
             coil_160: "Base + 3.5 Coil + 1.8 Coil",
             coil_80: "Base + 3.5 Coil",
             coil_40: "Base (No extra coil)",
@@ -75,7 +73,7 @@
             note_6: "Note: Terminal 5 = Common + 5"
         },
         ja: {
-            title: "📡 HFJ-350M アンテナ計算機",
+            title: "\uD83D\uDCE1 HFJ-350M アンテナ計算機",
             placeholder: "バンド (例: 40m) または 周波数 (例: 7.1)",
             band: "バンド",
             range: "範囲",
@@ -93,7 +91,6 @@
             warning_min: "短すぎます！",
             error_not_found: "構成が見つかりません。",
             note: "注意",
-            // Data translations
             coil_160: "ベース + 3.5コイル + 1.8コイル",
             coil_80: "ベース + 3.5コイル",
             coil_40: "ベース (追加コイルなし)",
@@ -107,13 +104,11 @@
         }
     };
 
-    // Detect language
     let lang = 'en';
     const htmlLang = document.documentElement.lang.toLowerCase();
     if (htmlLang.startsWith('de')) lang = 'de';
     else if (htmlLang.startsWith('ja')) lang = 'ja';
     
-    // Fallback or override from OpenHamClock settings if possible
     try {
         const savedLang = localStorage.getItem('i18nextLng');
         if (savedLang) {
@@ -167,16 +162,63 @@
             transition: all 0.3s ease;
         }
         .ohc-addon-icon:hover { border-color: var(--accent-amber, #ffb432); transform: scale(1.1); }
-        
         #ohc-addon-launcher { background: var(--bg-tertiary, #1a2332); color: var(--accent-amber); }
-        .ohc-addon-item { display: none; } /* Hidden by default */
+        .ohc-addon-item { display: none; }
 
         #hfj-calc-container {
-...
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            width: 300px;
+            background: var(--bg-panel, rgba(17, 24, 32, 0.95));
+            border: 1px solid var(--border-color, rgba(255, 180, 50, 0.3));
+            border-radius: 8px;
+            color: var(--text-primary, #f0f4f8);
+            font-family: 'JetBrains Mono', monospace, sans-serif;
+            z-index: 9999;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: none;
+            flex-direction: column;
+            backdrop-filter: blur(5px);
+        }
+        #hfj-calc-header {
+            padding: 10px;
+            background: rgba(255, 180, 50, 0.1);
+            border-bottom: 1px solid var(--border-color, rgba(255, 180, 50, 0.2));
+            cursor: move;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 8px 8px 0 0;
+        }
+        #hfj-calc-header h3 { margin: 0; font-size: 14px; color: var(--accent-cyan, #00ddff); }
+        #hfj-calc-content { padding: 12px; font-size: 13px; }
+        #hfj-calc-input {
+            width: 100%;
+            padding: 8px;
+            background: var(--bg-secondary, #111820);
+            border: 1px solid var(--border-color, rgba(255, 180, 50, 0.2));
+            color: var(--text-primary);
+            border-radius: 4px;
+            margin-bottom: 12px;
+            box-sizing: border-box;
+            outline: none;
+        }
+        .hfj-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .hfj-label { color: var(--text-secondary); }
+        .hfj-value { font-weight: bold; }
+        .hfj-accent-cyan { color: var(--accent-cyan); }
+        .hfj-accent-green { color: var(--accent-green); }
+        .hfj-accent-amber { color: var(--accent-amber); }
+        .hfj-accent-purple { color: var(--accent-purple); }
+        .hfj-accent-red { color: var(--accent-red); }
+        .hfj-bar-bg { width: 100%; height: 6px; background: var(--bg-tertiary); border-radius: 3px; margin: 4px 0 10px 0; overflow: hidden; }
+        .hfj-bar-fill { height: 100%; transition: width 0.3s ease; }
+    `;
+
     function init() {
         if (!document.body) return;
 
-        // Add Shared Styles
         if (!document.getElementById("ohc-addon-styles")) {
             const styleSheet = document.createElement("style");
             styleSheet.id = "ohc-addon-styles";
@@ -184,16 +226,14 @@
             document.head.appendChild(styleSheet);
         }
 
-        // Get or Create Drawer
         let drawer = document.getElementById("ohc-addon-drawer");
         if (!drawer) {
             drawer = document.createElement("div");
             drawer.id = "ohc-addon-drawer";
-            
             const launcher = document.createElement("div");
             launcher.id = "ohc-addon-launcher";
             launcher.className = "ohc-addon-icon";
-            launcher.innerHTML = "🧩";
+            launcher.innerHTML = "\uD83E\uDDE9";
             launcher.title = "AddOns";
             launcher.onclick = () => {
                 const items = document.querySelectorAll(".ohc-addon-item");
@@ -201,93 +241,73 @@
                 items.forEach(el => el.style.display = isHidden ? "flex" : "none");
                 launcher.style.transform = isHidden ? "rotate(90deg)" : "rotate(0deg)";
             };
-            
             drawer.appendChild(launcher);
             document.body.appendChild(drawer);
         }
 
-        // Add HFJ Icon to Drawer
         const toggleBtn = document.createElement("div");
         toggleBtn.id = "hfj-toggle-btn";
         toggleBtn.className = "ohc-addon-icon ohc-addon-item";
-        toggleBtn.innerHTML = "📡";
+        toggleBtn.innerHTML = "\uD83D\uDCE1";
         toggleBtn.title = t('title');
         drawer.appendChild(toggleBtn);
 
-        // Add Container
-...
+        const container = document.createElement("div");
+        container.id = "hfj-calc-container";
+        container.innerHTML = `
+            <div id="hfj-calc-header">
+                <h3>${t('title')}</h3>
+                <span id="hfj-close" style="cursor:pointer; color:var(--text-muted);">\u00D7</span>
+            </div>
+            <div id="hfj-calc-content">
+                <input type="text" id="hfj-calc-input" placeholder="${t('placeholder')}">
+                <div id="hfj-results"></div>
+            </div>
+        `;
+        document.body.appendChild(container);
 
         const input = document.getElementById("hfj-calc-input");
-        const results = document.getElementById("hfj-results");
         const closeBtn = document.getElementById("hfj-close");
 
         toggleBtn.onclick = () => {
             const isVisible = container.style.display === "flex";
             container.style.display = isVisible ? "none" : "flex";
         };
-
-        closeBtn.onclick = () => {
-            container.style.display = "none";
-        };
-
+        closeBtn.onclick = () => container.style.display = "none";
         input.oninput = (e) => {
-            const val = e.target.value;
-            calculate(val);
-            localStorage.setItem('hfj350m-last-input', val);
+            calculate(e.target.value);
+            localStorage.setItem('hfj350m-last-input', e.target.value);
         };
 
-        // Draggable logic
         let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
         const header = document.getElementById("hfj-calc-header");
-        header.onmousedown = dragMouseDown;
-
-        function dragMouseDown(e) {
+        header.onmousedown = (e) => {
             e.preventDefault();
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-            document.onmouseup = closeDragElement;
-            document.onmousemove = elementDrag;
-        }
-
-        function elementDrag(e) {
-            e.preventDefault();
-            pos1 = pos3 - e.clientX;
-            pos2 = pos4 - e.clientY;
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-            container.style.top = (container.offsetTop - pos2) + "px";
-            container.style.left = (container.offsetLeft - pos1) + "px";
-            container.style.right = 'auto';
-        }
-
-        function closeDragElement() {
-            document.onmouseup = null;
-            document.onmousemove = null;
-        }
+            pos3 = e.clientX; pos4 = e.clientY;
+            document.onmouseup = () => { document.onmouseup = null; document.onmousemove = null; };
+            document.onmousemove = (e) => {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+                pos3 = e.clientX; pos4 = e.clientY;
+                container.style.top = (container.offsetTop - pos2) + "px";
+                container.style.left = (container.offsetLeft - pos1) + "px";
+                container.style.right = 'auto';
+            };
+        };
 
         const savedInput = localStorage.getItem('hfj350m-last-input');
-        if (savedInput) {
-            input.value = savedInput;
-            calculate(savedInput);
-        }
+        if (savedInput) { input.value = savedInput; calculate(savedInput); }
     }
 
     function calculate(query) {
         const results = document.getElementById("hfj-results");
-        if (!query) {
-            results.innerHTML = "";
-            return;
-        }
-
+        if (!query) { results.innerHTML = ""; return; }
         const queryStr = String(query).toLowerCase().trim();
         let targetFreq = null;
-        let data = null;
-
-        data = ANTENNA_DATA.find(d => {
+        let data = ANTENNA_DATA.find(d => {
             const bandName = d.band.replace("m", "");
             return queryStr === d.band.toLowerCase() || queryStr === bandName;
         });
-
         if (!data) {
             const freq = parseFloat(queryStr.replace(',', '.'));
             if (!isNaN(freq)) {
@@ -298,88 +318,51 @@
                 });
             }
         }
-
         if (!data) {
             results.innerHTML = `<div class="hfj-accent-red" style="text-align:center;">${t('error_not_found')}</div>`;
             return;
         }
-
         let calcLenMm = data.length_mm;
         let diffMm = 0;
         let warning = "";
-
         if (targetFreq) {
             const diffKhz = (targetFreq - data.std_freq) * 1000;
             const changeCm = diffKhz / data.change_per_cm;
             calcLenMm = Math.round(data.length_mm - (changeCm * 10));
-
-            if (calcLenMm > 1266) {
-                warning = t('warning_max');
-                calcLenMm = 1266;
-            } else if (calcLenMm < 100) {
-                warning = t('warning_min');
-                calcLenMm = 100;
-            }
+            if (calcLenMm > 1266) { warning = t('warning_max'); calcLenMm = 1266; }
+            else if (calcLenMm < 100) { warning = t('warning_min'); calcLenMm = 100; }
             diffMm = calcLenMm - data.length_mm;
         }
-
         const maxLen = 1266;
         const stdPercent = (data.length_mm / maxLen) * 100;
         const calcPercent = (calcLenMm / maxLen) * 100;
-
         results.innerHTML = `
             <div style="border-bottom: 1px solid var(--border-color, rgba(255,180,50,0.1)); padding-bottom: 8px; margin-bottom: 8px;">
-                <div class="hfj-row">
-                    <span class="hfj-label">${t('band')}:</span>
-                    <span class="hfj-value hfj-accent-cyan">${data.band}</span>
-                </div>
-                <div class="hfj-row">
-                    <span class="hfj-label">${t('range')}:</span>
-                    <span>${data.freq_range[0]} - ${data.freq_range[1]} MHz</span>
-                </div>
+                <div class="hfj-row"><span class="hfj-label">${t('band')}:</span><span class="hfj-value hfj-accent-cyan">${data.band}</span></div>
+                <div class="hfj-row"><span class="hfj-label">${t('range')}:</span><span>${data.freq_range[0]} - ${data.freq_range[1]} MHz</span></div>
             </div>
-
             <div style="margin-bottom: 10px;">
                 <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 4px; text-transform: uppercase;">${t('setup')}</div>
                 <div class="hfj-row"><span class="hfj-label">${t('coil')}:</span><span>${t(data.coil)}</span></div>
                 <div class="hfj-row"><span class="hfj-label">${t('jumper')}:</span><span class="hfj-accent-green">${t(data.jumper)}</span></div>
                 <div class="hfj-row"><span class="hfj-label">${t('radial')}:</span><span>${data.radial}</span></div>
             </div>
-
             <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; margin-bottom: 8px;">
                 <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 4px; text-transform: uppercase;">${t('telescope_length')}</div>
-                
-                <div class="hfj-row">
-                    <span style="font-size: 12px;">${t('standard')} (${data.std_freq} MHz):</span>
-                    <span class="hfj-accent-amber hfj-value">${data.length_mm} mm</span>
-                </div>
-                <div class="hfj-bar-bg"><div class="hfj-bar-fill" style="width: ${stdPercent}%; background: var(--accent-amber, #ffb432);"></div></div>
-
+                <div class="hfj-row"><span style="font-size: 12px;">${t('standard')} (${data.std_freq} MHz):</span><span class="hfj-accent-amber hfj-value">${data.length_mm} mm</span></div>
+                <div class="hfj-bar-bg"><div class="hfj-bar-fill" style="width: ${stdPercent}%; background: var(--accent-amber);"></div></div>
                 ${targetFreq ? `
-                    <div class="hfj-row">
-                        <span style="font-size: 12px;">${t('calculated')} (${targetFreq} MHz):</span>
-                        <span class="hfj-accent-purple hfj-value">
-                            ${calcLenMm} mm
-                            ${warning ? `<span class="hfj-accent-red" style="margin-left: 5px;">⚠ ${warning}</span>` : ''}
-                        </span>
-                    </div>
-                    <div class="hfj-bar-bg"><div class="hfj-bar-fill" style="width: ${calcPercent}%; background: var(--accent-purple, #aa66ff);"></div></div>
-                    <div style="font-size: 11px; text-align: right; margin-top: -6px; color: ${diffMm >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">
-                        ${t('diff')}: ${diffMm > 0 ? '+' : ''}${diffMm} mm
-                    </div>
+                    <div class="hfj-row"><span style="font-size: 12px;">${t('calculated')} (${targetFreq} MHz):</span><span class="hfj-accent-purple hfj-value">${calcLenMm} mm ${warning ? `<span class="hfj-accent-red"> \u26A0 ${warning}</span>` : ''}</span></div>
+                    <div class="hfj-bar-bg"><div class="hfj-bar-fill" style="width: ${calcPercent}%; background: var(--accent-purple);"></div></div>
+                    <div style="font-size: 11px; text-align: right; margin-top: -6px; color: ${diffMm >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${t('diff')}: ${diffMm > 0 ? '+' : ''}${diffMm} mm</div>
                 ` : ''}
             </div>
-
             <div style="font-size: 11px; color: var(--text-secondary);">
                 <div>${t('sensitivity')}: <span style="color: var(--text-primary);">${data.change_per_cm} ${t('khz_per_cm')}</span></div>
-                ${data.note ? `<div class="hfj-accent-red" style="margin-top: 4px;">⚠ ${t(data.note)}</div>` : ''}
+                ${data.note ? `<div class="hfj-accent-red" style="margin-top: 4px;">\u26A0 ${t(data.note)}</div>` : ''}
             </div>
         `;
     }
 
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", init);
-    } else {
-        init();
-    }
+    if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", init); } else { init(); }
 })();
