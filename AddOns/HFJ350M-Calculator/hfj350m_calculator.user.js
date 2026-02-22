@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         HFJ-350M Calculator for OpenHamClock
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Adds a portable antenna calculator for the HFJ-350M with multi-language support (DE, EN, JA)
 // @author       DO3EET
 // @match        *://*/*
@@ -219,12 +219,11 @@
     function init() {
         if (!document.body) return;
 
-        if (!document.getElementById("ohc-addon-styles")) {
-            const styleSheet = document.createElement("style");
-            styleSheet.id = "ohc-addon-styles";
-            styleSheet.innerText = styles;
-            document.head.appendChild(styleSheet);
-        }
+        // Unique style tag for HFJ
+        const styleSheet = document.createElement("style");
+        styleSheet.id = "ohc-hfj-styles";
+        styleSheet.innerText = styles;
+        document.head.appendChild(styleSheet);
 
         let drawer = document.getElementById("ohc-addon-drawer");
         if (!drawer) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         APRS Newsfeed (Inbox) for OpenHamClock
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Fetches and displays your latest APRS messages from aprs.fi
 // @author       DO3EET
 // @match        *://*/*
@@ -147,7 +147,7 @@
         .aprs-msg-text { color: var(--text-primary); line-height: 1.4; word-break: break-word; }
         #aprs-news-settings { padding: 10px; background: rgba(0,0,0,0.3); border-top: 1px solid var(--border-color, rgba(255, 180, 50, 0.1)); font-size: 11px; display: none; }
         .aprs-input { width: 100%; padding: 6px; background: var(--bg-secondary, #111820); border: 1px solid var(--border-color, rgba(255, 180, 50, 0.2)); color: var(--text-primary); border-radius: 4px; margin-bottom: 6px; box-sizing: border-box; outline: none; }
-        .aprs-badge { position: absolute; top: -2px; right: -2px; background: var(--accent-red, #ff4466); color: white; font-size: 10px; width: 18px; height: 18px; border-radius: 50%; display: none; justify-content: center; align-items: center; border: 2px solid var(--bg-panel); }
+        .aprs-badge { position: absolute; top: -2px; right: -2px; background: var(--accent-red, #ff4466); color: white; font-size: 10px; width: 18px; height: 18px; border-radius: 50%; display: none; justify-content: center; align-items: center; border: 2px solid var(--bg-panel); z-index: 10; }
     `;
 
     let callsign = 'N0CALL';
@@ -166,12 +166,11 @@
         if (!document.body) return;
         callsign = getCallsign();
 
-        if (!document.getElementById("ohc-addon-styles")) {
-            const styleSheet = document.createElement("style");
-            styleSheet.id = "ohc-addon-styles";
-            styleSheet.innerText = styles;
-            document.head.appendChild(styleSheet);
-        }
+        // Specific style tag for APRS
+        const styleSheet = document.createElement("style");
+        styleSheet.id = "ohc-aprs-styles";
+        styleSheet.innerText = styles;
+        document.head.appendChild(styleSheet);
 
         let drawer = document.getElementById("ohc-addon-drawer");
         if (!drawer) {
@@ -231,7 +230,7 @@
         toggleBtn.onclick = () => {
             const isVisible = container.style.display === "flex";
             container.style.display = isVisible ? "none" : "flex";
-            if (!isVisible) {
+            if (isVisible) {
                 document.getElementById("aprs-news-badge").style.display = "none";
                 fetchMessages();
             }
