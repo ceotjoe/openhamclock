@@ -5972,7 +5972,9 @@ function getBandFromHz(freqHz) {
   if (freq >= 21 && freq <= 21.45) return '15m';
   if (freq >= 24.89 && freq <= 24.99) return '12m';
   if (freq >= 28 && freq <= 29.7) return '10m';
+  if (freq >= 40 && freq <= 42) return '8m';
   if (freq >= 50 && freq <= 54) return '6m';
+  if (freq >= 70 && freq <= 70.5) return '4m';
   if (freq >= 144 && freq <= 148) return '2m';
   if (freq >= 420 && freq <= 450) return '70cm';
   return 'Unknown';
@@ -6503,7 +6505,9 @@ function freqToBandKHz(freqKHz) {
   if (freqKHz >= 21000 && freqKHz < 21450) return '15m';
   if (freqKHz >= 24890 && freqKHz < 24990) return '12m';
   if (freqKHz >= 28000 && freqKHz < 29700) return '10m';
+  if (freqKHz >= 40000 && freqKHz < 42000) return '8m';
   if (freqKHz >= 50000 && freqKHz < 54000) return '6m';
+  if (freqKHz >= 70000 && freqKHz < 70500) return '4m';
   return 'Other';
 }
 
@@ -11120,7 +11124,9 @@ function freqToBand(freqHz) {
   if (mhz >= 21.0 && mhz < 21.45) return '15m';
   if (mhz >= 24.89 && mhz < 24.99) return '12m';
   if (mhz >= 28.0 && mhz < 29.7) return '10m';
+  if (mhz >= 40.0 && mhz < 42.0) return '8m';
   if (mhz >= 50.0 && mhz < 54.0) return '6m';
+  if (mhz >= 70.0 && mhz < 70.5) return '4m';
   if (mhz >= 144.0 && mhz < 148.0) return '2m';
   if (mhz >= 420.0 && mhz < 450.0) return '70cm';
   return `${mhz.toFixed(3)} MHz`;

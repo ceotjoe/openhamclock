@@ -54,8 +54,8 @@ export default function ClassicLayout(props) {
     toggleSatellites,
   } = props;
 
-  const liveSpotBands = ['160m', '80m', '60m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
-  const mapLegendBands = ['160', '80', '40', '30', '20', '17', '15', '12', '10', '6'];
+  const liveSpotBands = ['160m', '80m', '60m', '40m', '30m', '20m', '17m', '15m', '12m', '10m', '8m', '6m', '4m'];
+  const mapLegendBands = ['160', '80', '40', '30', '20', '17', '15', '12', '10', '8', '6', '4'];
 
   const { tuneTo } = useRig();
 
@@ -281,6 +281,9 @@ export default function ClassicLayout(props) {
                         '15m': [21, 21.45],
                         '12m': [24.89, 24.99],
                         '10m': [28, 29.7],
+                        '8m': [40, 42],
+                        '6m': [50, 54],
+                        '4m': [70, 70.5],
                       };
                       const r = bands[band];
                       return r && freq >= r[0] && freq <= r[1];
