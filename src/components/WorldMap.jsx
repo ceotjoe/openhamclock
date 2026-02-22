@@ -359,6 +359,24 @@ export const WorldMap = ({
     }
   });
 
+  // Legend visibility toggle (persisted)
+  const [showLegend, setShowLegend] = useState(() => {
+    try {
+      return localStorage.getItem('openhamclock_showLegend') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const toggleLegend = useCallback(() => {
+    setShowLegend((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('openhamclock_showLegend', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
   const destinationPoint = (latDeg, lonDeg, bearingDeg, distanceDeg) => {
     const toRad = (d) => (d * Math.PI) / 180;
     const toDeg = (r) => (r * 180) / Math.PI;
@@ -1925,8 +1943,34 @@ export const WorldMap = ({
       {/* DX News Ticker - left side of bottom bar */}
       {!hideOverlays && showDXNews && <DXNewsTicker />}
 
-      {/* Legend - centered above news ticker */}
+      {/* Legend toggle button */}
       {!hideOverlays && (
+        <button
+          onClick={toggleLegend}
+          title={showLegend ? 'Hide legend' : 'Show legend'}
+          style={{
+            position: 'absolute',
+            bottom: showLegend ? '80px' : '44px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0, 0, 0, 0.85)',
+            border: '1px solid #444',
+            borderRadius: '4px',
+            padding: '2px 8px',
+            zIndex: 1001,
+            cursor: 'pointer',
+            fontSize: '10px',
+            fontFamily: 'JetBrains Mono, monospace',
+            color: '#888',
+            lineHeight: 1.2,
+          }}
+        >
+          {showLegend ? '▼ Legend' : '▲ Legend'}
+        </button>
+      )}
+
+      {/* Legend - centered above news ticker */}
+      {!hideOverlays && showLegend && (
         <div
           style={{
             position: 'absolute',
@@ -1946,64 +1990,66 @@ export const WorldMap = ({
             flexWrap: 'nowrap',
           }}
         >
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span style={{ color: '#888' }}>Bands:</span>
-            <button
-              type="button"
-              onClick={() => clearMapBandFilter()}
-              title="Show all bands"
-              style={{
-                background: hasMapBandFilter ? 'rgba(120,120,120,0.35)' : '#00ffcc',
-                color: hasMapBandFilter ? '#ccc' : '#001f1a',
-                padding: '2px 5px',
-                borderRadius: '3px',
-                fontWeight: '700',
-                border: hasMapBandFilter ? '1px solid #666' : '1px solid rgba(0,0,0,0.35)',
-                cursor: 'pointer',
-                lineHeight: 1.1,
-              }}
-            >
-              ALL
-            </button>
-            {BAND_LEGEND_ORDER.map((band) => {
-              const bg = getBandColorForBand(band, effectiveBandColors);
-              const fg = getBandTextColor(bg);
-              const isEditing = editingBand === band;
-              const isSelected = selectedMapBands.has(normalizeBandKey(band));
-              const isDimmed = hasMapBandFilter && !isSelected;
-              return (
-                <button
-                  key={band}
-                  type="button"
-                  onClick={(e) => {
-                    if (e.shiftKey) {
-                      openBandColorEditor(band);
-                      return;
-                    }
-                    toggleMapBand(band);
-                  }}
-                  title={`Click to filter ${band}; Shift+Click to edit color`}
-                  style={{
-                    background: bg,
-                    color: fg,
-                    padding: '2px 5px',
-                    borderRadius: '3px',
-                    fontWeight: '600',
-                    border: isEditing
-                      ? '2px solid #ffffff'
-                      : isSelected
-                        ? '1px solid #00ffcc'
-                        : '1px solid rgba(0,0,0,0.35)',
-                    cursor: 'pointer',
-                    lineHeight: 1.1,
-                    opacity: isDimmed ? 0.35 : 1,
-                  }}
-                >
-                  {band}
-                </button>
-              );
-            })}
-          </div>
+          {showDXPaths && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ color: '#888' }}>Bands:</span>
+              <button
+                type="button"
+                onClick={() => clearMapBandFilter()}
+                title="Show all bands"
+                style={{
+                  background: hasMapBandFilter ? 'rgba(120,120,120,0.35)' : '#00ffcc',
+                  color: hasMapBandFilter ? '#ccc' : '#001f1a',
+                  padding: '2px 5px',
+                  borderRadius: '3px',
+                  fontWeight: '700',
+                  border: hasMapBandFilter ? '1px solid #666' : '1px solid rgba(0,0,0,0.35)',
+                  cursor: 'pointer',
+                  lineHeight: 1.1,
+                }}
+              >
+                ALL
+              </button>
+              {BAND_LEGEND_ORDER.map((band) => {
+                const bg = getBandColorForBand(band, effectiveBandColors);
+                const fg = getBandTextColor(bg);
+                const isEditing = editingBand === band;
+                const isSelected = selectedMapBands.has(normalizeBandKey(band));
+                const isDimmed = hasMapBandFilter && !isSelected;
+                return (
+                  <button
+                    key={band}
+                    type="button"
+                    onClick={(e) => {
+                      if (e.shiftKey) {
+                        openBandColorEditor(band);
+                        return;
+                      }
+                      toggleMapBand(band);
+                    }}
+                    title={`Click to filter ${band}; Shift+Click to edit color`}
+                    style={{
+                      background: bg,
+                      color: fg,
+                      padding: '2px 5px',
+                      borderRadius: '3px',
+                      fontWeight: '600',
+                      border: isEditing
+                        ? '2px solid #ffffff'
+                        : isSelected
+                          ? '1px solid #00ffcc'
+                          : '1px solid rgba(0,0,0,0.35)',
+                      cursor: 'pointer',
+                      lineHeight: 1.1,
+                      opacity: isDimmed ? 0.35 : 1,
+                    }}
+                  >
+                    {band}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span
               style={{
@@ -2079,7 +2125,7 @@ export const WorldMap = ({
           </div>
         </div>
       )}
-      {!hideOverlays && editingBand && (
+      {!hideOverlays && showLegend && editingBand && (
         <div
           style={{
             position: 'absolute',
