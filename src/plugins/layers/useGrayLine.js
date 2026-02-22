@@ -420,9 +420,44 @@ function addMinimizeToggle(element, storageKey) {
 export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
   const [layers, setLayers] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [showTwilight, setShowTwilight] = useState(true);
-  const [showEnhancedZone, setShowEnhancedZone] = useState(true);
-  const [twilightOpacity, setTwilightOpacity] = useState(0.5);
+  const [showTwilight, _setShowTwilight] = useState(() => {
+    try {
+      const v = localStorage.getItem('openhamclock_grayline_twilight');
+      return v !== null ? v === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [showEnhancedZone, _setShowEnhancedZone] = useState(() => {
+    try {
+      const v = localStorage.getItem('openhamclock_grayline_enhanced');
+      return v !== null ? v === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [twilightOpacity, _setTwilightOpacity] = useState(() => {
+    try {
+      const v = localStorage.getItem('openhamclock_grayline_twilightOpacity');
+      return v !== null ? parseFloat(v) : 0.5;
+    } catch {
+      return 0.5;
+    }
+  });
+
+  // Wrappers that persist to localStorage on change
+  const setShowTwilight = (val) => {
+    _setShowTwilight(val);
+    try { localStorage.setItem('openhamclock_grayline_twilight', String(val)); } catch {}
+  };
+  const setShowEnhancedZone = (val) => {
+    _setShowEnhancedZone(val);
+    try { localStorage.setItem('openhamclock_grayline_enhanced', String(val)); } catch {}
+  };
+  const setTwilightOpacity = (val) => {
+    _setTwilightOpacity(val);
+    try { localStorage.setItem('openhamclock_grayline_twilightOpacity', String(val)); } catch {}
+  };
 
   const controlRef = useRef(null);
   const updateIntervalRef = useRef(null);
@@ -537,6 +572,12 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
       const enhancedCheck = document.getElementById('grayline-enhanced');
       const twilightOpacitySlider = document.getElementById('grayline-twilight-opacity');
       const twilightOpacityValue = document.getElementById('twilight-opacity-value');
+
+      // Sync DOM with persisted state (may differ from hardcoded HTML defaults)
+      if (twilightCheck) twilightCheck.checked = showTwilight;
+      if (enhancedCheck) enhancedCheck.checked = showEnhancedZone;
+      if (twilightOpacitySlider) twilightOpacitySlider.value = Math.round(twilightOpacity * 100);
+      if (twilightOpacityValue) twilightOpacityValue.textContent = Math.round(twilightOpacity * 100);
 
       if (twilightCheck) {
         twilightCheck.addEventListener('change', (e) => setShowTwilight(e.target.checked));
