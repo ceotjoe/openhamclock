@@ -153,8 +153,11 @@ const App = () => {
 
   const { dxFilters, setDxFilters, pskFilters, setPskFilters, mapBandFilter, setMapBandFilter } = useFilters();
 
-  const { isFullscreen, handleFullscreenToggle } = useFullscreen();
-  const { wakeLockStatus } = useScreenWakeLock(config);
+  const { wakeLockStatus, onFullscreenEnter, onFullscreenExit } = useScreenWakeLock(config);
+  const { isFullscreen, handleFullscreenToggle } = useFullscreen({
+    onEnter: onFullscreenEnter,
+    onExit: onFullscreenExit,
+  });
   const scale = useResponsiveScale();
   const isLocalInstall = useLocalInstall();
   useVersionCheck();

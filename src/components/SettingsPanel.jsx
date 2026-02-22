@@ -1575,7 +1575,7 @@ export const SettingsPanel = ({
                       color: wakeLockStatus.active ? 'var(--accent-green)' : 'var(--accent-amber)',
                     }}
                   >
-                    {wakeLockStatus.active ? '🔒' : '⚠'}
+                    {wakeLockStatus.active ? '🔒' : wakeLockStatus.reason === 'waiting' ? '🕐' : '⚠'}
                     {wakeLockStatus.active
                       ? t('station.settings.preventSleep.status.active')
                       : t(`station.settings.preventSleep.status.${wakeLockStatus.reason}`, {
