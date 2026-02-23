@@ -82,7 +82,7 @@ export const useWWFFSpots = () => {
                 lon,
                 time: s.spot_time ? s.spot_time_formatted.substr(11, 5) + 'z' : '',
                 expire: 0,
-                grid: WGS84ToMaidenhead({ lat: lat, lng: lon}),
+                grid: WGS84ToMaidenhead({ lat: lat, lng: lon }),
               };
             }),
           );

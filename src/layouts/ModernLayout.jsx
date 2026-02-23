@@ -333,7 +333,6 @@ export default function ModernLayout(props) {
       potaFilters={potaFilters}
       setShowPotaFilters={setShowPotaFilters}
       filteredPotaSpots={filteredPotaSpots}
-
       sotaData={sotaSpots.data}
       sotaLoading={sotaSpots.loading}
       sotaLastUpdated={sotaSpots.lastUpdated}
@@ -346,7 +345,6 @@ export default function ModernLayout(props) {
       sotaFilters={sotaFilters}
       setShowSotaFilters={setShowSotaFilters}
       filteredSotaSpots={filteredSotaSpots}
-
       wwffData={wwffSpots.data}
       wwffLoading={wwffSpots.loading}
       wwffLastUpdated={wwffSpots.lastUpdated}
@@ -359,7 +357,6 @@ export default function ModernLayout(props) {
       wwffFilters={wwffFilters}
       setShowWwffFilters={setShowWwffFilters}
       filteredWwffSpots={filteredWwffSpots}
-
       wwbotaData={wwbotaSpots.data}
       wwbotaLoading={wwbotaSpots.loading}
       wwbotaLastUpdated={wwbotaSpots.lastUpdated}

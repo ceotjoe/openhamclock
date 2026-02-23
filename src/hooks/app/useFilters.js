@@ -82,7 +82,7 @@ export default function useFilters() {
 
   useEffect(() => {
     localStorage.setItem('openhamclock_wwffFilters', JSON.stringify(wwffFilters));
-      syncAllSettingsToServer();
+    syncAllSettingsToServer();
   }, [wwffFilters]);
 
   // WWBOTA Filters
@@ -97,7 +97,7 @@ export default function useFilters() {
 
   useEffect(() => {
     localStorage.setItem('openhamclock_wwbotaFilters', JSON.stringify(wwbotaFilters));
-      syncAllSettingsToServer();
+    syncAllSettingsToServer();
   }, [wwffFilters]);
 
   const [mapBandFilter, setMapBandFilter] = useState(() => {

@@ -74,7 +74,6 @@ export const ActivatePanel = ({
         </span>
 
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-
           {typeof onOpenFilters === 'function' && (
             <button
               onClick={onOpenFilters}
@@ -131,7 +130,6 @@ export const ActivatePanel = ({
           >
             <IconMap size={11} style={{ verticalAlign: 'middle' }} />
           </button>
-
         </div>
       </div>
 

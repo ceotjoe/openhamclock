@@ -155,13 +155,21 @@ const App = () => {
     toggleAPRS,
   } = useMapLayers();
 
-  const { dxFilters, setDxFilters,
-    pskFilters, setPskFilters,
-    mapBandFilter, setMapBandFilter,
-    potaFilters, setPotaFilters,
-    sotaFilters, setSotaFilters,
-    wwffFilters, setWwffFilters,
-    wwbotaFilters, setWwbotaFilters,
+  const {
+    dxFilters,
+    setDxFilters,
+    pskFilters,
+    setPskFilters,
+    mapBandFilter,
+    setMapBandFilter,
+    potaFilters,
+    setPotaFilters,
+    sotaFilters,
+    setSotaFilters,
+    wwffFilters,
+    setWwffFilters,
+    wwbotaFilters,
+    setWwbotaFilters,
   } = useFilters();
 
   const { isFullscreen, handleFullscreenToggle } = useFullscreen();
@@ -247,14 +255,14 @@ const App = () => {
       if (filters?.bands?.length && !filters.bands.includes(spot.band)) return false;
       if (filters?.modes?.length && !filters.modes.includes(spot.mode)) return false;
       if (filters?.grids?.length) {
-        const gridPrefix = spot.grid.substring(0,2).toUpperCase();
+        const gridPrefix = spot.grid.substring(0, 2).toUpperCase();
         if (!filters.grids.includes(gridPrefix)) return false;
       }
       return true;
     });
   }
 
-  const filteredPotaSpots = useMemo(()=> {
+  const filteredPotaSpots = useMemo(() => {
     return ActivateFilter(potaSpots, potaFilters);
   }, [potaSpots, potaFilters]);
 
@@ -453,28 +461,28 @@ const App = () => {
         onClose={() => setShowPSKFilters(false)}
       />
       <ActivateFilterManager
-        name='POTA'
+        name="POTA"
         filters={potaFilters}
         onFilterChange={setPotaFilters}
         isOpen={showPotaFilters}
         onClose={() => setShowPotaFilters(false)}
       />
       <ActivateFilterManager
-        name='SOTA'
+        name="SOTA"
         filters={sotaFilters}
         onFilterChange={setSotaFilters}
         isOpen={showSotaFilters}
         onClose={() => setShowSotaFilters(false)}
       />
       <ActivateFilterManager
-        name='WWFF'
+        name="WWFF"
         filters={wwffFilters}
         onFilterChange={setWwffFilters}
         isOpen={showWwffFilters}
         onClose={() => setShowWwffFilters(false)}
       />
       <ActivateFilterManager
-        name='WWBOTA'
+        name="WWBOTA"
         filters={wwbotaFilters}
         onFilterChange={setWwbotaFilters}
         isOpen={showWwbotaFilters}

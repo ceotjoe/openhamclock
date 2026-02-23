@@ -86,7 +86,7 @@ export const useSOTASpots = () => {
                       return new Date(ts).toISOString().substr(11, 5) + 'z';
                     })()
                   : '',
-                grid: WGS84ToMaidenhead({ lat:lat, lng:lon}),
+                grid: WGS84ToMaidenhead({ lat: lat, lng: lon }),
               };
             });
 

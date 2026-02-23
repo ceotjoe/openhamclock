@@ -1251,7 +1251,6 @@ export const WorldMap = ({
     potaMarkersRef.current = [];
 
     if (showPOTA && potaSpots) {
-
       potaSpots.forEach((spot) => {
         const band = normalizeBandKey(spot.band) || bandFromAnyFrequency(spot.freq);
         if (!bandPassesMapFilter(band)) return;
