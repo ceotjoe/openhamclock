@@ -136,7 +136,7 @@
     const styles = `
         #ohc-addon-drawer {
             position: fixed;
-            bottom: 20px;
+            top: 100px;
             right: 20px;
             display: flex;
             flex-direction: row-reverse;
@@ -144,6 +144,7 @@
             gap: 10px;
             z-index: 10000;
             pointer-events: none;
+            user-select: none;
         }
         #ohc-addon-drawer.ohc-vertical {
             flex-direction: column-reverse;
@@ -165,7 +166,7 @@
             transition: all 0.3s ease;
         }
         .ohc-addon-icon:hover { border-color: var(--accent-amber, #ffb432); transform: scale(1.1); }
-        #ohc-addon-launcher { background: var(--bg-tertiary, #1a2332); color: var(--accent-amber); }
+        #ohc-addon-launcher { background: var(--bg-tertiary, #1a2332); color: var(--accent-amber); cursor: move; }
         .ohc-addon-item { display: none; }
 
         #hfj-calc-container {
@@ -233,30 +234,124 @@
         if (!drawer) {
             drawer = document.createElement("div");
             drawer.id = "ohc-addon-drawer";
+            
+            const updateLayout = () => {
+                if (!drawer) return;
+                const rect = drawer.getBoundingClientRect();
+                const winW = window.innerWidth;
+                const winH = window.innerHeight;
+                
+                const isRight = (rect.left + rect.width / 2) > (winW / 2);
+                const isBottom = (rect.top + rect.height / 2) > (winH / 2);
+                const isVert = drawer.classList.contains('ohc-vertical');
+                
+                if (isVert) {
+                    drawer.style.flexDirection = isBottom ? 'column-reverse' : 'column';
+                } else {
+                    drawer.style.flexDirection = isRight ? 'row-reverse' : 'row';
+                }
+            };
+
             const savedLayout = localStorage.getItem('ohc_addon_layout') || 'horizontal';
             if (savedLayout === 'vertical') drawer.classList.add('ohc-vertical');
+            
+            const savedPos = JSON.parse(localStorage.getItem('ohc_addon_pos') || '{}');
+            if (savedPos.top) drawer.style.top = savedPos.top;
+            if (savedPos.bottom) drawer.style.bottom = savedPos.bottom;
+            if (savedPos.left) drawer.style.left = savedPos.left;
+            if (savedPos.right) drawer.style.right = savedPos.right;
+            
+            if (!savedPos.top && !savedPos.bottom) {
+                drawer.style.top = '100px';
+                drawer.style.right = '20px';
+            }
 
             const launcher = document.createElement("div");
             launcher.id = "ohc-addon-launcher";
             launcher.className = "ohc-addon-icon";
             launcher.innerHTML = "\uD83E\uDDE9";
-            launcher.title = "L: Toggle | R: Rotate";
+            launcher.title = "L: Toggle | M: Drag | R: Rotate";
             
             launcher.onclick = () => {
                 const items = document.querySelectorAll(".ohc-addon-item");
-                const isHidden = items[0]?.style.display !== "flex";
+                const isHidden = Array.from(items).some(el => el.style.display !== "flex");
                 items.forEach(el => el.style.display = isHidden ? "flex" : "none");
                 launcher.style.transform = isHidden ? "rotate(90deg)" : "rotate(0deg)";
+                updateLayout();
             };
 
             launcher.oncontextmenu = (e) => {
                 e.preventDefault();
-                const isVert = drawer.classList.toggle('ohc-vertical');
-                localStorage.setItem('ohc_addon_layout', isVert ? 'vertical' : 'horizontal');
+                drawer.classList.toggle('ohc-vertical');
+                localStorage.setItem('ohc_addon_layout', drawer.classList.contains('ohc-vertical') ? 'vertical' : 'horizontal');
+                updateLayout();
             };
+
+            let isDragging = false;
+            let startX, startY, startTop, startLeft;
+
+            launcher.onmousedown = (e) => {
+                if (e.button === 1) {
+                    e.preventDefault();
+                    isDragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    const rect = drawer.getBoundingClientRect();
+                    startTop = rect.top;
+                    startLeft = rect.left;
+                    launcher.style.cursor = 'grabbing';
+                }
+            };
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                drawer.style.top = (startTop + dy) + "px";
+                drawer.style.left = (startLeft + dx) + "px";
+                drawer.style.right = 'auto';
+                drawer.style.bottom = 'auto';
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!isDragging) return;
+                isDragging = false;
+                launcher.style.cursor = 'move';
+                
+                const rect = drawer.getBoundingClientRect();
+                const winW = window.innerWidth;
+                const winH = window.innerHeight;
+                const isRight = (rect.left + rect.width / 2) > (winW / 2);
+                const isBottom = (rect.top + rect.height / 2) > (winH / 2);
+                
+                const pos = {};
+                if (isRight) {
+                    drawer.style.left = 'auto';
+                    drawer.style.right = Math.max(0, winW - rect.right) + 'px';
+                    pos.right = drawer.style.right;
+                } else {
+                    drawer.style.right = 'auto';
+                    drawer.style.left = Math.max(0, rect.left) + 'px';
+                    pos.left = drawer.style.left;
+                }
+                
+                if (isBottom) {
+                    drawer.style.top = 'auto';
+                    drawer.style.bottom = Math.max(0, winH - rect.bottom) + 'px';
+                    pos.bottom = drawer.style.bottom;
+                } else {
+                    drawer.style.bottom = 'auto';
+                    drawer.style.top = Math.max(0, rect.top) + 'px';
+                    pos.top = drawer.style.top;
+                }
+                
+                localStorage.setItem('ohc_addon_pos', JSON.stringify(pos));
+                updateLayout();
+            });
 
             drawer.appendChild(launcher);
             document.body.appendChild(drawer);
+            setTimeout(updateLayout, 100);
         }
 
         const toggleBtn = document.createElement("div");
