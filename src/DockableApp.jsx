@@ -28,6 +28,7 @@ import {
   RigControlPanel,
   OnAirPanel,
   IDTimerPanel,
+  ImagePanel,
 } from './components';
 
 import { loadLayout, saveLayout } from './store/layoutStore.js';
@@ -88,13 +89,9 @@ export const DockableApp = ({
   // Spots & data
   dxClusterData,
   potaSpots,
-  filteredPotaSpots,
   wwffSpots,
-  filteredWwffSpots,
   sotaSpots,
-  filteredSotaSpots,
   wwbotaSpots,
-  filteredWwbotaSpots,
   mySpots,
   dxpeditions,
   contests,
@@ -114,14 +111,6 @@ export const DockableApp = ({
   pskFilters,
   setShowDXFilters,
   setShowPSKFilters,
-  potaFilters,
-  setShowPotaFilters,
-  sotaFilters,
-  setShowSotaFilters,
-  wwffFilters,
-  setShowWwffFilters,
-  wwbotaFilters,
-  setShowWwbotaFilters,
 
   // Map layers
   mapLayers,
@@ -374,6 +363,7 @@ export const DockableApp = ({
       'rig-control': { name: 'Rig Control', icon: '📻' },
       'on-air': { name: 'On Air', icon: '🔴' },
       'id-timer': { name: 'ID Timer', icon: '📢' },
+      'custom-image': { name: 'Custom Image', icon: '🖼️' },
     };
   }, [isLocalInstall]);
 
@@ -414,7 +404,11 @@ export const DockableApp = ({
         </div>
       </div>
 
-      <WeatherPanel weatherData={localWeather} units={config.units} nodeId={nodeId} />
+      <WeatherPanel
+        weatherData={localWeather}
+        units={config.units}
+        nodeId={nodeId}
+      />
     </div>
   );
 
@@ -514,7 +508,13 @@ export const DockableApp = ({
           </div>
         </div>
 
-        {showDxWeather && <WeatherPanel weatherData={dxWeather} units={config.units} nodeId={nodeId} />}
+        {showDxWeather && (
+          <WeatherPanel
+            weatherData={dxWeather}
+            units={config.units}
+            nodeId={nodeId}
+          />
+        )}
       </div>
     );
   };
@@ -556,10 +556,10 @@ export const DockableApp = ({
         onDXChange={handleDXChange}
         dxLocked={dxLocked}
         onHoverSpot={setHoveredSpot}
-        potaSpots={filteredPotaSpots ? filteredPotaSpots : potaSpots.data}
-        wwffSpots={filteredWwffSpots ? filteredWwffSpots : wwffSpots.data}
-        sotaSpots={filteredSotaSpots ? filteredSotaSpots : sotaSpots.data}
-        wwbotaSpots={filteredWwbotaSpots ? filteredWwbotaSpots : wwbotaSpots.data}
+        potaSpots={potaSpots.data}
+        wwffSpots={wwffSpots.data}
+        sotaSpots={sotaSpots.data}
+        wwbotaSpots={wwbotaSpots.data}
         mySpots={mySpots.data}
         dxPaths={dxClusterData.paths}
         dxFilters={dxFilters}
@@ -764,9 +764,6 @@ export const DockableApp = ({
               showLabelsOnMap={mapLayersEff.showPOTALabels}
               onToggleLabelsOnMap={togglePOTALabelsEff}
               onSpotClick={handleSpotClick}
-              filters={potaFilters}
-              onOpenFilters={() => setShowPotaFilters(true)}
-              filteredData={filteredPotaSpots}
             />
           );
           break;
@@ -784,9 +781,6 @@ export const DockableApp = ({
               showLabelsOnMap={mapLayersEff.showWWFFLabels}
               onToggleLabelsOnMap={toggleWWFFLabelsEff}
               onSpotClick={handleSpotClick}
-              filters={wwffFilters}
-              onOpenFilters={() => setShowWwffFilters(true)}
-              filteredData={filteredWwffSpots}
             />
           );
           break;
@@ -804,9 +798,6 @@ export const DockableApp = ({
               showLabelsOnMap={mapLayersEff.showSOTALabels}
               onToggleLabelsOnMap={toggleSOTALabelsEff}
               onSpotClick={handleSpotClick}
-              filters={sotaFilters}
-              onOpenFilters={() => setShowSotaFilters(true)}
-              filteredData={filteredSotaSpots}
             />
           );
           break;
@@ -824,9 +815,6 @@ export const DockableApp = ({
               showLabelsOnMap={mapLayersEff.showWWBOTALabels}
               onToggleLabelsOnMap={toggleWWBOTALabelsEff}
               onSpotClick={handleSpotClick}
-              filters={wwbotaFilters}
-              onOpenFilters={() => setShowWwbotaFilters(true)}
-              filteredData={filteredWwbotaSpots}
             />
           );
           break;
@@ -860,7 +848,11 @@ export const DockableApp = ({
           );
 
         case 'ambient':
-          content = <AmbientPanel units={config.units} />;
+          content = (
+            <AmbientPanel
+              units={config.units}
+            />
+          );
           break;
 
         case 'rig-control':
@@ -873,6 +865,10 @@ export const DockableApp = ({
 
         case 'id-timer':
           content = <IDTimerPanel callsign={config.callsign} />;
+          break;
+
+        case 'custom-image':
+          content = <ImagePanel />;
           break;
 
         default:
