@@ -31,6 +31,17 @@ export function useTheme() {
       applyPrebuiltTheme(theme);
     }
     saveConfig({ theme });
+
+    const allThemeButtons = document.querySelectorAll('.theme-select-button');
+    allThemeButtons.forEach((element) => {
+      element.classList.remove('active');
+    });
+
+    const activeButton = document.querySelector('.' + theme + '-theme-select-button');
+    if (activeButton) {
+      activeButton.classList.add('active');
+    }
+    console.log(activeButton);
   }, [theme]);
 
   /* Custom edits */

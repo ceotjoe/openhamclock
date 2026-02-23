@@ -482,6 +482,24 @@ export const SettingsPanel = ({
           </button>
 
           <button
+            onClick={() => setActiveTab('display')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              background: activeTab === 'display' ? 'var(--accent-amber)' : 'transparent',
+              border: 'none',
+              borderRadius: '6px 6px 0 0',
+              color: activeTab === 'display' ? '#000' : 'var(--text-secondary)',
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'display' ? '700' : '400',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}
+          >
+            Display
+          </button>
+
+          <button
             onClick={() => setActiveTab('layers')}
             style={{
               flex: 1,
@@ -812,112 +830,6 @@ export const SettingsPanel = ({
               <span style={{ float: 'right', fontSize: '11px', color: 'var(--text-muted)' }}>
                 {t('station.settings.mouseZoom.describeMax')}
               </span>
-            </div>
-
-            {/* Theme */}
-            <div style={{ marginBottom: '8px' }}>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '8px',
-                  color: 'var(--text-muted)',
-                  fontSize: '11px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}
-              >
-                {t('station.settings.theme')}
-              </label>
-
-              <ThemeSelector theme={theme} setTheme={setTheme} id="theme-selector-component" />
-
-              {theme === 'custom' && customTheme && (
-                <CustomThemeEditor
-                  customTheme={customTheme}
-                  updateCustomVar={updateCustomVar}
-                  id="custom-theme-editor-component"
-                />
-              )}
-
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                {themeDescriptions[theme]}
-              </div>
-            </div>
-
-            {/* Layout */}
-            <div style={{ marginBottom: '8px' }}>
-              <label
-                style={{
-                  display: 'block',
-                  marginBottom: '8px',
-                  color: 'var(--text-muted)',
-                  fontSize: '11px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}
-              >
-                {t('station.settings.layout')}
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                {['modern', 'classic', 'tablet', 'compact', 'dockable'].map((l) => (
-                  <button
-                    key={l}
-                    onClick={() => setLayout(l)}
-                    style={{
-                      padding: '10px',
-                      background: layout === l ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
-                      border: `1px solid ${layout === l ? 'var(--accent-amber)' : 'var(--border-color)'}`,
-                      borderRadius: '6px',
-                      color: layout === l ? '#000' : 'var(--text-secondary)',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      fontWeight: layout === l ? '600' : '400',
-                    }}
-                  >
-                    {l === 'modern'
-                      ? '🖥️'
-                      : l === 'classic'
-                        ? '📺'
-                        : l === 'tablet'
-                          ? '📱'
-                          : l === 'compact'
-                            ? '📊'
-                            : '⊞'}{' '}
-                    {l === 'dockable' ? t('station.settings.layout.dockable') : t('station.settings.layout.' + l)}
-                  </button>
-                ))}
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                {layoutDescriptions[layout]}
-              </div>
-              {layout === 'dockable' && onResetLayout && (
-                <button
-                  onClick={() => {
-                    if (confirm(t('station.settings.layout.reset.confirm'))) {
-                      onResetLayout();
-                    }
-                  }}
-                  style={{
-                    marginTop: '10px',
-                    padding: '8px 12px',
-                    background: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '6px',
-                    color: 'var(--text-secondary)',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                  {t('station.settings.layout.reset.button')}
-                </button>
-              )}
             </div>
 
             {/* DX Cluster Source */}
@@ -2249,6 +2161,117 @@ export const SettingsPanel = ({
                     </div>
                   </div>
                 </details>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Display Tab */}
+        {activeTab === 'display' && (
+          <div>
+            {/* Layout */}
+            <div style={{ marginBottom: '24px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  color: 'var(--text-muted)',
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                }}
+              >
+                {t('station.settings.layout')}
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {['modern', 'classic', 'tablet', 'compact', 'dockable'].map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setLayout(l)}
+                    style={{
+                      padding: '10px',
+                      background: layout === l ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                      border: `1px solid ${layout === l ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                      borderRadius: '6px',
+                      color: layout === l ? '#000' : 'var(--text-secondary)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      fontWeight: layout === l ? '600' : '400',
+                    }}
+                  >
+                    {l === 'modern'
+                      ? '🖥️'
+                      : l === 'classic'
+                        ? '📺'
+                        : l === 'tablet'
+                          ? '📱'
+                          : l === 'compact'
+                            ? '📊'
+                            : '⊞'}{' '}
+                    {l === 'dockable' ? t('station.settings.layout.dockable') : t('station.settings.layout.' + l)}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {layoutDescriptions[layout]}
+              </div>
+              {layout === 'dockable' && onResetLayout && (
+                <button
+                  onClick={() => {
+                    if (confirm(t('station.settings.layout.reset.confirm'))) {
+                      onResetLayout();
+                    }
+                  }}
+                  style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    color: 'var(--text-secondary)',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  {t('station.settings.layout.reset.button')}
+                </button>
+              )}
+            </div>
+
+            {/* Theme */}
+            <div style={{ marginBottom: '8px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  color: 'var(--text-muted)',
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                }}
+              >
+                {t('station.settings.theme')}
+              </label>
+
+              <ThemeSelector theme={theme} setTheme={setTheme} id="theme-selector-component" />
+
+              {theme === 'custom' && customTheme && (
+                <CustomThemeEditor
+                  customTheme={customTheme}
+                  updateCustomVar={updateCustomVar}
+                  id="custom-theme-editor-component"
+                />
+              )}
+
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {themeDescriptions[theme]}
               </div>
             </div>
           </div>

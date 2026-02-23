@@ -600,6 +600,28 @@ body::before {
 
 /* Theme controls */
 
+#theme-selector-component .theme-select-button {
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+#theme-selector-component .theme-select-button span.icon {
+  text-shadow: 0 0 5px #000;
+}
+
+#theme-selector-component .theme-select-button.active {
+  border-color: var(--accent-amber);
+  background-color: var(--accent-amber);
+  color: #000;
+  font-weight: 600;
+}
+
 #custom-theme-editor-component .custom-theme-colorpicker {
   margin: 1em auto;
   text-align: center;
@@ -609,6 +631,12 @@ body::before {
 #custom-theme-editor-component .custom-theme-colorpicker .react-colorful {
   width: 100%;
   height: 200px;
+}
+
+#custom-theme-editor-component .custom-theme-colorpicker label {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 /* Hide the hue slider for variables that have color names */
