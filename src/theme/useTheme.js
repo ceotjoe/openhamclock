@@ -41,7 +41,6 @@ export function useTheme() {
     if (activeButton) {
       activeButton.classList.add('active');
     }
-    console.log(activeButton);
   }, [theme]);
 
   /* Custom edits */
