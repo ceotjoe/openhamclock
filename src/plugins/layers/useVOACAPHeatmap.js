@@ -39,37 +39,32 @@ const BANDS = [
 // Reliability to color: HamClock-style wide spectrum
 // magenta (0%) → red → orange → yellow → green (100%)
 function reliabilityColor(r) {
-  if (r <= 0) return 'rgba(160,0,120,0.85)';
+  // Poor (< 15%) — no overlay; let the map show through
+  if (r < 15) return null;
   if (r >= 99) return 'rgba(0,220,0,0.85)';
 
   let red, green, blue;
-  if (r < 20) {
-    // Magenta → Red (0–20%)
-    const t = r / 20;
-    red = 160 + Math.round(t * 95);
-    green = 0;
-    blue = Math.round(120 * (1 - t));
-  } else if (r < 40) {
-    // Red → Orange (20–40%)
-    const t = (r - 20) / 20;
+  if (r < 30) {
+    // Low: Red-Orange (15–30%)
+    const t = (r - 15) / 15;
     red = 255;
-    green = Math.round(t * 140);
+    green = Math.round(t * 100);
     blue = 0;
-  } else if (r < 60) {
-    // Orange → Yellow (40–60%)
-    const t = (r - 40) / 20;
+  } else if (r < 50) {
+    // Fair-Low: Orange → Yellow (30–50%)
+    const t = (r - 30) / 20;
     red = 255;
-    green = 140 + Math.round(t * 115);
+    green = 100 + Math.round(t * 155);
     blue = 0;
-  } else if (r < 80) {
-    // Yellow → Yellow-Green (60–80%)
-    const t = (r - 60) / 20;
+  } else if (r < 70) {
+    // Fair: Yellow → Yellow-Green (50–70%)
+    const t = (r - 50) / 20;
     red = 255 - Math.round(t * 130);
     green = 255;
     blue = 0;
   } else {
-    // Yellow-Green → Green (80–100%)
-    const t = (r - 80) / 20;
+    // Good: Yellow-Green → Green (70–100%)
+    const t = (r - 70) / 30;
     red = 125 - Math.round(t * 125);
     green = 220 + Math.round(t * 35);
     blue = 0;
@@ -110,7 +105,7 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
   });
   const [gridSize, setGridSize] = useState(() => {
     const saved = localStorage.getItem('voacap-heatmap-grid');
-    return saved ? parseInt(saved) : 10;
+    return saved ? parseInt(saved) : 5;
   });
   const [propMode, setPropMode] = useState(() => {
     try {
@@ -290,7 +285,7 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
                 display: flex; justify-content: space-between; align-items: center;
                 background: rgba(0,0,0,0.3); border-radius: 4px; padding: 4px 6px;
               ">
-                <span style="display: inline-block; width: 12px; height: 12px; background: rgba(160,0,120,0.9); border-radius: 2px;"></span>
+                <span style="display: inline-block; width: 12px; height: 12px; background: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,0.2) 2px, rgba(255,255,255,0.2) 4px); border: 1px solid rgba(255,255,255,0.3); border-radius: 2px;" title="No overlay"></span>
                 <span style="color: #888; font-size: 9px;">Poor</span>
                 <span style="display: inline-block; width: 12px; height: 12px; background: rgba(255,80,0,0.9); border-radius: 2px;"></span>
                 <span style="color: #888; font-size: 9px;">Low</span>
@@ -428,6 +423,7 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
 
     data.cells.forEach((cell) => {
       const color = reliabilityColor(cell.r);
+      if (!color) return; // Poor — no overlay
       const band = BANDS[selectedBand];
 
       // Create rectangles in 3 world copies for dateline support
@@ -438,7 +434,7 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
         ];
 
         const rect = L.rectangle(bounds, {
-          color: 'transparent',
+          stroke: false,
           fillColor: color,
           fillOpacity: opacity,
           weight: 0,
