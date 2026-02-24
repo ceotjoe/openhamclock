@@ -426,6 +426,10 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
       if (!color) return; // Poor — no overlay
       const band = BANDS[selectedBand];
 
+      // Fade opacity near the poor threshold for smooth visual edges
+      // instead of hard color-to-transparent cutoffs at grid boundaries
+      const cellOpacity = cell.r < 30 ? opacity * ((cell.r - 15) / 15) : opacity;
+
       // Create rectangles in 3 world copies for dateline support
       for (const offset of [-360, 0, 360]) {
         const bounds = [
@@ -436,7 +440,7 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
         const rect = L.rectangle(bounds, {
           stroke: false,
           fillColor: color,
-          fillOpacity: opacity,
+          fillOpacity: cellOpacity,
           weight: 0,
           interactive: false,
           bubblingMouseEvents: true,
