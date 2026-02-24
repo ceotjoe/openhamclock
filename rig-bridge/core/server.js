@@ -907,6 +907,10 @@ function createServer(registry) {
     if (typeof newConfig.logging === 'boolean') {
       config.logging = newConfig.logging;
     }
+    // macOS: tty.* (dial-in) blocks open() — silently upgrade to cu.* (call-out)
+    if (process.platform === 'darwin' && config.radio.serialPort?.startsWith('/dev/tty.')) {
+      config.radio.serialPort = config.radio.serialPort.replace('/dev/tty.', '/dev/cu.');
+    }
     saveConfig();
 
     // Restart connection with new config
