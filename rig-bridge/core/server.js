@@ -1,6 +1,6 @@
 'use strict';
 /**
- * server.js — Express HTTP server, all API routes, and SSE endpoint
+ * server.js — Express HTTP server, all API routes, SSE endpoint, and live log
  *
  * Exposes the openhamclock-compatible API:
  *   GET  /             Setup UI (HTML) or JSON health check
@@ -13,6 +13,7 @@
  *   GET  /api/config   Get current config
  *   POST /api/config   Update config and reconnect
  *   POST /api/test     Test a serial port connection
+ *   GET  /api/log/stream  SSE stream of live console log output
  */
 
 const express = require('express');
@@ -20,6 +21,48 @@ const cors = require('cors');
 const { getSerialPort, listPorts } = require('./serial-utils');
 const { state, addSseClient, removeSseClient } = require('./state');
 const { config, saveConfig } = require('./config');
+
+// ─── Console log interceptor ───────────────────────────────────────────────
+// Wraps console.log/warn/error so every line is buffered and broadcast
+// to connected SSE log clients in addition to the normal stdout output.
+
+const LOG_BUFFER_MAX = 200; // lines kept in memory for late-joining clients
+const logBuffer = []; // { ts, level, text }
+let logSseClients = []; // { id, res }
+
+function broadcastLog(entry) {
+  // Named SSE event "line" so the browser can use addEventListener('line', ...)
+  const msg = `event: line\ndata: ${JSON.stringify(entry)}\n\n`;
+  logSseClients.forEach((c) => c.res.write(msg));
+}
+
+function pushLog(level, args) {
+  const text = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+  const entry = { ts: Date.now(), level, text };
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+  broadcastLog(entry);
+}
+
+// Patch console — keep originals for actual stdout output
+const _log = console.log.bind(console);
+const _warn = console.warn.bind(console);
+const _error = console.error.bind(console);
+
+console.log = (...args) => {
+  _log(...args);
+  pushLog('log', args);
+};
+console.warn = (...args) => {
+  _warn(...args);
+  pushLog('warn', args);
+};
+console.error = (...args) => {
+  _error(...args);
+  pushLog('error', args);
+};
+
+// ──────────────────────────────────────────────────────────────────────────
 
 const SETUP_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -35,13 +78,14 @@ const SETUP_HTML = `<!DOCTYPE html>
       color: #c4c9d4;
       min-height: 100vh;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
+      align-items: center;
       padding: 30px 15px;
     }
     .container { max-width: 600px; width: 100%; }
     .header {
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
     }
     .header h1 {
       font-size: 24px;
@@ -61,7 +105,7 @@ const SETUP_HTML = `<!DOCTYPE html>
       background: #111620;
       border: 1px solid #1e2530;
       border-radius: 8px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       font-family: 'JetBrains Mono', 'Consolas', monospace;
       font-size: 13px;
     }
@@ -73,6 +117,33 @@ const SETUP_HTML = `<!DOCTYPE html>
     .status-dot.connected { background: #22c55e; }
     .status-freq { color: #00ffcc; font-size: 16px; font-weight: 700; }
     .status-mode { color: #f59e0b; }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #1e2530;
+      padding-bottom: 0;
+    }
+    .tab-btn {
+      padding: 8px 18px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #6b7280;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: #c4c9d4; }
+    .tab-btn.active { color: #00ffcc; border-bottom-color: #00ffcc; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Config tab ── */
     .card {
       background: #111620;
       border: 1px solid #1e2530;
@@ -126,10 +197,7 @@ const SETUP_HTML = `<!DOCTYPE html>
       transition: all 0.2s;
       width: 100%;
     }
-    .btn-primary {
-      background: #00ffcc;
-      color: #0a0e14;
-    }
+    .btn-primary { background: #00ffcc; color: #0a0e14; }
     .btn-primary:hover { background: #00e6b8; }
     .btn-secondary {
       background: #1e2530;
@@ -159,21 +227,8 @@ const SETUP_HTML = `<!DOCTYPE html>
       gap: 8px;
       margin-bottom: 14px;
     }
-    .checkbox-row input[type="checkbox"] {
-      width: 18px; height: 18px;
-      cursor: pointer;
-    }
-    .checkbox-row span {
-      font-size: 13px;
-      color: #c4c9d4;
-    }
-    .port-info {
-      font-size: 11px;
-      color: #6b7280;
-      padding: 2px 6px;
-      background: #1a1f2a;
-      border-radius: 3px;
-    }
+    .checkbox-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+    .checkbox-row span { font-size: 13px; color: #c4c9d4; }
     .serial-opts { display: none; }
     .serial-opts.show { display: block; }
     .legacy-opts { display: none; }
@@ -202,6 +257,86 @@ const SETUP_HTML = `<!DOCTYPE html>
       color: #f59e0b;
       font-family: monospace;
     }
+
+    /* ── Console Log tab ── */
+    .log-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .log-toolbar .log-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: opacity 0.15s;
+    }
+    .log-badge.active { opacity: 1; }
+    .log-badge.inactive { opacity: 0.35; }
+    .log-badge.lvl-log { background: #1e2d1e; color: #86efac; border-color: #166534; }
+    .log-badge.lvl-warn { background: #2d2210; color: #fcd34d; border-color: #92400e; }
+    .log-badge.lvl-error { background: #2d1010; color: #fca5a5; border-color: #991b1b; }
+    .log-scroll-wrap {
+      background: #060a0f;
+      border: 1px solid #1e2530;
+      border-radius: 8px;
+      height: 420px;
+      overflow-y: auto;
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-line {
+      display: flex;
+      gap: 10px;
+      padding: 1px 0;
+      border-bottom: 1px solid #0d1117;
+    }
+    .log-line:last-child { border-bottom: none; }
+    .log-ts {
+      color: #374151;
+      white-space: nowrap;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .log-text { color: #9ca3af; word-break: break-all; flex: 1; }
+    .log-line.lvl-log .log-text { color: #9ca3af; }
+    .log-line.lvl-warn .log-text { color: #fcd34d; }
+    .log-line.lvl-error .log-text { color: #fca5a5; }
+    .log-empty {
+      color: #374151;
+      text-align: center;
+      padding: 40px 0;
+      font-style: italic;
+    }
+    .log-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #374151;
+    }
+    .log-footer .log-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .log-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #374151;
+    }
+    .log-dot.live { background: #22c55e; animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
     @media (max-width: 500px) {
       .row { flex-direction: column; gap: 0; }
     }
@@ -222,112 +357,158 @@ const SETUP_HTML = `<!DOCTYPE html>
       <span class="status-mode" id="statusMode"></span>
     </div>
 
-    <!-- Radio Type -->
-    <div class="card">
-      <div class="card-title">⚡ Radio Connection</div>
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('config', this)">⚙️ Configuration</button>
+      <button class="tab-btn" onclick="switchTab('log', this)">🖥️ Console Log</button>
+    </div>
 
-      <label>Radio Type</label>
-      <select id="radioType" onchange="onTypeChange()">
-        <option value="none">— Select your radio —</option>
-        <optgroup label="Direct USB (Recommended)">
-          <option value="yaesu">Yaesu (FT-991A, FT-891, FT-710, FT-DX10, etc.)</option>
-          <option value="kenwood">Kenwood (TS-890, TS-590, TS-2000, etc.)</option>
-          <option value="icom">Icom (IC-7300, IC-7610, IC-9700, IC-705, etc.)</option>
-        </optgroup>
-        <optgroup label="Via Control Software (Legacy)">
-          <option value="flrig">flrig (XML-RPC)</option>
-          <option value="rigctld">rigctld / Hamlib (TCP)</option>
-        </optgroup>
-        <optgroup label="Development">
-          <option value="mock">Simulated Radio (Mock)</option>
-        </optgroup>
-      </select>
+    <!-- ══ Tab: Configuration ══ -->
+    <div class="tab-panel active" id="tab-config">
+      <div class="card">
+        <div class="card-title">⚡ Radio Connection</div>
 
-      <!-- Serial options (Yaesu/Kenwood/Icom) -->
-      <div class="serial-opts" id="serialOpts">
-        <label>Serial Port</label>
-        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
-          <select id="serialPort" style="flex: 1; margin-bottom: 0;"></select>
-          <button class="btn btn-secondary" onclick="refreshPorts()" style="width: auto; padding: 8px 14px;">🔄 Scan</button>
+        <label>Radio Type</label>
+        <select id="radioType" onchange="onTypeChange()">
+          <option value="none">— Select your radio —</option>
+          <optgroup label="Direct USB (Recommended)">
+            <option value="yaesu">Yaesu (FT-991A, FT-891, FT-710, FT-DX10, etc.)</option>
+            <option value="kenwood">Kenwood (TS-890, TS-590, TS-2000, etc.)</option>
+            <option value="icom">Icom (IC-7300, IC-7610, IC-9700, IC-705, etc.)</option>
+          </optgroup>
+          <optgroup label="Via Control Software (Legacy)">
+            <option value="flrig">flrig (XML-RPC)</option>
+            <option value="rigctld">rigctld / Hamlib (TCP)</option>
+          </optgroup>
+          <optgroup label="Development">
+            <option value="mock">Simulated Radio (Mock)</option>
+          </optgroup>
+        </select>
+
+        <!-- Serial options (Yaesu/Kenwood/Icom) -->
+        <div class="serial-opts" id="serialOpts">
+          <label>Serial Port</label>
+          <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+            <select id="serialPort" style="flex: 1; margin-bottom: 0;"></select>
+            <button class="btn btn-secondary" onclick="refreshPorts()" style="width: auto; padding: 8px 14px;">🔄 Scan</button>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Baud Rate</label>
+              <select id="baudRate">
+                <option value="4800">4800</option>
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400" selected>38400</option>
+                <option value="57600">57600</option>
+                <option value="115200">115200</option>
+              </select>
+            </div>
+            <div>
+              <label>Stop Bits</label>
+              <select id="stopBits">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+              </select>
+            </div>
+          </div>
+          <div class="help-text">Yaesu default: 38400 baud, 2 stop bits. Match your radio's CAT Rate setting.</div>
+
+          <div class="icom-addr" id="icomAddr">
+            <label>CI-V Address</label>
+            <input type="text" id="icomAddress" value="0x94" placeholder="0x94">
+            <div class="help-text">IC-7300: 0x94 · IC-7610: 0x98 · IC-9700: 0xA2 · IC-705: 0xA4</div>
+          </div>
         </div>
+
+        <!-- Legacy options (flrig/rigctld) -->
+        <div class="legacy-opts" id="legacyOpts">
+          <div class="row">
+            <div>
+              <label>Host</label>
+              <input type="text" id="legacyHost" value="127.0.0.1">
+            </div>
+            <div>
+              <label>Port</label>
+              <input type="number" id="legacyPort" value="12345">
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
 
         <div class="row">
           <div>
-            <label>Baud Rate</label>
-            <select id="baudRate">
-              <option value="4800">4800</option>
-              <option value="9600">9600</option>
-              <option value="19200">19200</option>
-              <option value="38400" selected>38400</option>
-              <option value="57600">57600</option>
-              <option value="115200">115200</option>
-            </select>
+            <label>Poll Interval (ms)</label>
+            <input type="number" id="pollInterval" value="500" min="100" max="5000">
           </div>
-          <div>
-            <label>Stop Bits</label>
-            <select id="stopBits">
-              <option value="1">1</option>
-              <option value="2" selected>2</option>
-            </select>
+          <div style="display: flex; align-items: flex-end; padding-bottom: 14px;">
+            <div class="checkbox-row" style="margin-bottom: 0;">
+              <input type="checkbox" id="pttEnabled">
+              <span>Enable PTT</span>
+            </div>
           </div>
         </div>
-        <div class="help-text">Yaesu default: 38400 baud, 2 stop bits. Match your radio's CAT Rate setting.</div>
 
-        <div class="icom-addr" id="icomAddr">
-          <label>CI-V Address</label>
-          <input type="text" id="icomAddress" value="0x94" placeholder="0x94">
-          <div class="help-text">IC-7300: 0x94 · IC-7610: 0x98 · IC-9700: 0xA2 · IC-705: 0xA4</div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="testConnection()">🔍 Test Port</button>
+          <button class="btn btn-primary" onclick="saveAndConnect()">💾 Save & Connect</button>
         </div>
       </div>
 
-      <!-- Legacy options (flrig/rigctld) -->
-      <div class="legacy-opts" id="legacyOpts">
-        <div class="row">
-          <div>
-            <label>Host</label>
-            <input type="text" id="legacyHost" value="127.0.0.1">
-          </div>
-          <div>
-            <label>Port</label>
-            <input type="number" id="legacyPort" value="12345">
-          </div>
-        </div>
-      </div>
-
-      <div class="section-divider"></div>
-
-      <div class="row">
-        <div>
-          <label>Poll Interval (ms)</label>
-          <input type="number" id="pollInterval" value="500" min="100" max="5000">
-        </div>
-        <div style="display: flex; align-items: flex-end; padding-bottom: 14px;">
-          <div class="checkbox-row" style="margin-bottom: 0;">
-            <input type="checkbox" id="pttEnabled">
-            <span>Enable PTT</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-secondary" onclick="testConnection()">🔍 Test Port</button>
-        <button class="btn btn-primary" onclick="saveAndConnect()">💾 Save & Connect</button>
+      <!-- Instructions -->
+      <div class="ohc-instructions">
+        <strong>Setup in OpenHamClock:</strong><br>
+        1. Open <strong>Settings</strong> → <strong>Station Settings</strong> → <strong>Rig Control</strong><br>
+        2. Check <strong>Enable Rig Control</strong><br>
+        3. Set Host URL to: <code>http://localhost:5555</code><br>
+        4. Click any DX spot, POTA, or SOTA to tune your radio! 🎉
       </div>
     </div>
 
-    <!-- Instructions -->
-    <div class="ohc-instructions">
-      <strong>Setup in OpenHamClock:</strong><br>
-      1. Open <strong>Settings</strong> → <strong>Station Settings</strong> → <strong>Rig Control</strong><br>
-      2. Check <strong>Enable Rig Control</strong><br>
-      3. Set Host URL to: <code>http://localhost:5555</code><br>
-      4. Click any DX spot, POTA, or SOTA to tune your radio! 🎉
+    <!-- ══ Tab: Console Log ══ -->
+    <div class="tab-panel" id="tab-log">
+      <div class="log-toolbar">
+        <span style="font-size:12px; color:#6b7280; margin-right:4px;">Filter:</span>
+        <span class="log-badge lvl-log active" data-level="log" onclick="toggleFilter('log', this)">INFO</span>
+        <span class="log-badge lvl-warn active" data-level="warn" onclick="toggleFilter('warn', this)">WARN</span>
+        <span class="log-badge lvl-error active" data-level="error" onclick="toggleFilter('error', this)">ERROR</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary" onclick="clearLog()" style="width:auto; padding:5px 14px; font-size:12px;">🗑 Clear</button>
+      </div>
+
+      <div class="log-scroll-wrap" id="logScroll">
+        <div class="log-empty" id="logEmpty">Waiting for log output…</div>
+      </div>
+
+      <div class="log-footer">
+        <div class="log-indicator">
+          <div class="log-dot" id="logDot"></div>
+          <span id="logStatus">Connecting…</span>
+        </div>
+        <div>
+          <label style="display:inline; text-transform:none; font-size:11px; color:#374151;">
+            <input type="checkbox" id="logAutoScroll" checked style="width:auto; margin:0 4px 0 0; vertical-align:middle;">
+            Auto-scroll
+          </label>
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
 
   <script>
+    // ── Tab switching ──────────────────────────────────────────────────────
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    // ── Config tab ─────────────────────────────────────────────────────────
     let currentConfig = null;
     let statusInterval = null;
 
@@ -338,6 +519,7 @@ const SETUP_HTML = `<!DOCTYPE html>
         populateForm(currentConfig);
         refreshPorts();
         startStatusPoll();
+        startLogStream();
       } catch (e) {
         showToast('Failed to load config', 'error');
       }
@@ -351,8 +533,10 @@ const SETUP_HTML = `<!DOCTYPE html>
       document.getElementById('icomAddress').value = r.icomAddress || '0x94';
       document.getElementById('pollInterval').value = r.pollInterval || 500;
       document.getElementById('pttEnabled').checked = !!r.pttEnabled;
-      document.getElementById('legacyHost').value = r.type === 'rigctld' ? (r.rigctldHost || '127.0.0.1') : (r.flrigHost || '127.0.0.1');
-      document.getElementById('legacyPort').value = r.type === 'rigctld' ? (r.rigctldPort || 4532) : (r.flrigPort || 12345);
+      document.getElementById('legacyHost').value =
+        r.type === 'rigctld' ? (r.rigctldHost || '127.0.0.1') : (r.flrigHost || '127.0.0.1');
+      document.getElementById('legacyPort').value =
+        r.type === 'rigctld' ? (r.rigctldPort || 4532) : (r.flrigPort || 12345);
       onTypeChange();
     }
 
@@ -387,7 +571,7 @@ const SETUP_HTML = `<!DOCTYPE html>
         if (ports.length === 0) {
           sel.innerHTML += '<option value="" disabled>No ports found — is your radio plugged in via USB?</option>';
         }
-        ports.forEach(p => {
+        ports.forEach((p) => {
           const label = p.manufacturer ? p.path + ' (' + p.manufacturer + ')' : p.path;
           const opt = document.createElement('option');
           opt.value = p.path;
@@ -416,7 +600,10 @@ const SETUP_HTML = `<!DOCTYPE html>
             body: JSON.stringify({ serialPort, baudRate }),
           });
           const data = await res.json();
-          showToast(data.success ? '✅ ' + data.message : '❌ ' + data.error, data.success ? 'success' : 'error');
+          showToast(
+            data.success ? '✅ ' + data.message : '❌ ' + data.error,
+            data.success ? 'success' : 'error',
+          );
         } catch (e) {
           showToast('Test failed: ' + e.message, 'error');
         }
@@ -494,6 +681,126 @@ const SETUP_HTML = `<!DOCTYPE html>
       setTimeout(() => { t.className = 'toast'; }, 3000);
     }
 
+    // ── Console Log tab ────────────────────────────────────────────────────
+    const activeFilters = { log: true, warn: true, error: true };
+    let logLines = []; // all received lines (unfiltered)
+
+    function toggleFilter(level, el) {
+      activeFilters[level] = !activeFilters[level];
+      el.classList.toggle('active', activeFilters[level]);
+      el.classList.toggle('inactive', !activeFilters[level]);
+      renderLog();
+    }
+
+    function clearLog() {
+      logLines = [];
+      renderLog();
+    }
+
+    function fmtTime(ts) {
+      const d = new Date(ts);
+      return d.toTimeString().substring(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+    }
+
+    function renderLog() {
+      const wrap = document.getElementById('logScroll');
+      const empty = document.getElementById('logEmpty');
+      const autoScroll = document.getElementById('logAutoScroll').checked;
+      const wasAtBottom = wrap.scrollHeight - wrap.scrollTop <= wrap.clientHeight + 40;
+
+      const visible = logLines.filter((l) => activeFilters[l.level]);
+
+      if (visible.length === 0) {
+        empty.style.display = 'block';
+        // Remove all line elements
+        [...wrap.querySelectorAll('.log-line')].forEach((el) => el.remove());
+        return;
+      }
+      empty.style.display = 'none';
+
+      // Full re-render (simple; log volume is low)
+      [...wrap.querySelectorAll('.log-line')].forEach((el) => el.remove());
+      const frag = document.createDocumentFragment();
+      visible.forEach((line) => {
+        const row = document.createElement('div');
+        row.className = 'log-line lvl-' + line.level;
+        row.innerHTML =
+          '<span class="log-ts">' + fmtTime(line.ts) + '</span>' +
+          '<span class="log-text">' + escHtml(line.text) + '</span>';
+        frag.appendChild(row);
+      });
+      wrap.appendChild(frag);
+
+      if (autoScroll && wasAtBottom) {
+        wrap.scrollTop = wrap.scrollHeight;
+      }
+    }
+
+    function appendLogLine(entry) {
+      logLines.push(entry);
+      if (!activeFilters[entry.level]) return; // filtered out — skip DOM update
+
+      const wrap = document.getElementById('logScroll');
+      const empty = document.getElementById('logEmpty');
+      const autoScroll = document.getElementById('logAutoScroll').checked;
+      const wasAtBottom = wrap.scrollHeight - wrap.scrollTop <= wrap.clientHeight + 40;
+
+      empty.style.display = 'none';
+
+      const row = document.createElement('div');
+      row.className = 'log-line lvl-' + entry.level;
+      row.innerHTML =
+        '<span class="log-ts">' + fmtTime(entry.ts) + '</span>' +
+        '<span class="log-text">' + escHtml(entry.text) + '</span>';
+      wrap.appendChild(row);
+
+      if (autoScroll && wasAtBottom) {
+        wrap.scrollTop = wrap.scrollHeight;
+      }
+    }
+
+    function escHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function setLogStatus(live) {
+      document.getElementById('logDot').className = 'log-dot' + (live ? ' live' : '');
+      document.getElementById('logStatus').textContent = live ? 'Live' : 'Reconnecting…';
+    }
+
+    function startLogStream() {
+      let es;
+
+      function connect() {
+        es = new EventSource('/api/log/stream');
+
+        es.onopen = () => setLogStatus(true);
+
+        es.addEventListener('history', (e) => {
+          const lines = JSON.parse(e.data);
+          lines.forEach((l) => logLines.push(l));
+          renderLog();
+        });
+
+        es.addEventListener('line', (e) => {
+          const entry = JSON.parse(e.data);
+          appendLogLine(entry);
+        });
+
+        es.onerror = () => {
+          setLogStatus(false);
+          es.close();
+          setTimeout(connect, 3000);
+        };
+      }
+
+      connect();
+    }
+
     init();
   </script>
 </body>
@@ -510,9 +817,29 @@ function createServer(registry) {
   // ─── Setup Web UI ───
   app.get('/', (req, res) => {
     if (!req.headers.accept || !req.headers.accept.includes('text/html')) {
-      return res.json({ status: 'ok', connected: state.connected, version: '1.0.0' });
+      return res.json({ status: 'ok', connected: state.connected, version: '1.1.0' });
     }
     res.send(SETUP_HTML);
+  });
+
+  // ─── API: Live console log stream (SSE) ───
+  app.get('/api/log/stream', (req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    // Send buffered history so a freshly opened tab sees recent output
+    res.write(`event: history\ndata: ${JSON.stringify(logBuffer)}\n\n`);
+
+    const clientId = Date.now() + Math.random();
+    logSseClients.push({ id: clientId, res });
+
+    req.on('close', () => {
+      logSseClients = logSseClients.filter((c) => c.id !== clientId);
+    });
   });
 
   // ─── API: List serial ports ───
