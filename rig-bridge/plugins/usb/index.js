@@ -90,7 +90,9 @@ function createUsbPlugin(radioType) {
         if (!SP || !config.radio.serialPort) return;
 
         if (serialPort && serialPort.isOpen) {
-          try { serialPort.close(); } catch (e) {}
+          try {
+            serialPort.close();
+          } catch (e) {}
         }
         serialPort = null;
         rxBuffer = '';
@@ -148,7 +150,9 @@ function createUsbPlugin(radioType) {
         }
         stopPolling();
         if (serialPort && serialPort.isOpen) {
-          try { serialPort.close(); } catch (e) {}
+          try {
+            serialPort.close();
+          } catch (e) {}
         }
         serialPort = null;
         updateState('connected', false);

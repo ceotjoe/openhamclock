@@ -119,7 +119,9 @@ module.exports = {
       }
       stopPolling();
       if (socket) {
-        try { socket.destroy(); } catch (e) {}
+        try {
+          socket.destroy();
+        } catch (e) {}
         socket = null;
       }
       pending = null;

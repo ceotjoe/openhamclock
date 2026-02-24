@@ -27,7 +27,7 @@ class PluginRegistry {
     this._config = config;
     this._services = services; // { updateState, state, broadcast }
     this._descriptors = new Map(); // id → descriptor
-    this._instance = null;        // current active plugin instance
+    this._instance = null; // current active plugin instance
     this._activeId = null;
   }
 
