@@ -4,19 +4,26 @@
 
 The Rig Bridge connects OpenHamClock directly to your radio via USB — no flrig, no rigctld, no complicated setup. Just plug in your radio, run the bridge, pick your COM port, and go.
 
+Built on a **plugin architecture** — each radio integration is a standalone module, making it easy to add new integrations without touching existing code.
+
 ## Supported Radios
 
 ### Direct USB (Recommended)
 
-| Brand       | Protocol | Tested Models                                       |
-| ----------- | -------- | --------------------------------------------------- |
+| Brand       | Protocol | Tested Models                                        |
+| ----------- | -------- | ---------------------------------------------------- |
 | **Yaesu**   | CAT      | FT-991A, FT-891, FT-710, FT-DX10, FT-DX101, FT-5000 |
-| **Kenwood** | Kenwood  | TS-890, TS-590, TS-2000, TS-480                     |
-| **Icom**    | CI-V     | IC-7300, IC-7610, IC-9700, IC-705, IC-7851          |
+| **Kenwood** | Kenwood  | TS-890, TS-590, TS-2000, TS-480                      |
+| **Icom**    | CI-V     | IC-7300, IC-7610, IC-9700, IC-705, IC-7851           |
+
+Also works with **Elecraft** radios (K3, K4, KX3, KX2) using the Kenwood plugin.
 
 ### Via Control Software (Legacy)
 
-Still works with **flrig** or **rigctld** if you prefer.
+| Software    | Protocol | Default Port |
+| ----------- | -------- | ------------ |
+| **flrig**   | XML-RPC  | 12345        |
+| **rigctld** | TCP      | 4532         |
 
 ---
 
@@ -39,6 +46,12 @@ node rig-bridge.js
 ```
 
 Then open **http://localhost:5555** to configure.
+
+**Options:**
+
+```bash
+node rig-bridge.js --port 8080   # Use a different port
+```
 
 ---
 
@@ -107,7 +120,7 @@ Executables are output to the `dist/` folder.
 
 ## API Reference
 
-Same API as the original rig-daemon — fully backward compatible:
+Fully backward compatible with the original rig-daemon API:
 
 | Method | Endpoint      | Description                               |
 | ------ | ------------- | ----------------------------------------- |
@@ -115,7 +128,69 @@ Same API as the original rig-daemon — fully backward compatible:
 | GET    | `/stream`     | SSE stream of real-time updates           |
 | POST   | `/freq`       | Set frequency: `{ "freq": 14074000 }`     |
 | POST   | `/mode`       | Set mode: `{ "mode": "USB" }`             |
-| POST   | `/ptt`        | Set PTT: `{ "ptt": true }`                |
+| POST   | `/ptt`        | Set PTT: `{ "ptt": true }`               |
 | GET    | `/api/ports`  | List available serial ports               |
 | GET    | `/api/config` | Get current configuration                 |
 | POST   | `/api/config` | Update configuration & reconnect          |
+| POST   | `/api/test`   | Test a serial port connection             |
+
+---
+
+## Project Structure
+
+```
+rig-bridge/
+├── rig-bridge.js          # Entry point — thin orchestrator
+│
+├── core/
+│   ├── config.js          # Config load/save, defaults, CLI args
+│   ├── state.js           # Shared rig state + SSE broadcast
+│   ├── server.js          # Express HTTP server + all API routes
+│   ├── plugin-registry.js # Plugin lifecycle manager + dispatcher
+│   └── serial-utils.js    # Shared serial port helpers
+│
+└── plugins/
+    ├── usb/
+    │   ├── index.js           # USB serial lifecycle (open, reconnect, poll)
+    │   ├── protocol-yaesu.js  # Yaesu CAT ASCII protocol
+    │   ├── protocol-kenwood.js# Kenwood ASCII protocol
+    │   └── protocol-icom.js   # Icom CI-V binary protocol
+    ├── rigctld.js         # rigctld TCP plugin
+    └── flrig.js           # flrig XML-RPC plugin
+```
+
+---
+
+## Writing a Plugin
+
+Each plugin exports an object with the following shape:
+
+```js
+module.exports = {
+  id: 'my-plugin',            // Unique identifier (matches config.radio.type)
+  name: 'My Plugin',          // Human-readable name
+  category: 'rig',            // 'rig' | 'rotator' | 'logger' | 'other'
+  configKey: 'radio',         // Which config section this plugin reads
+
+  create(config, { updateState, state }) {
+    return {
+      connect()    { /* open connection */ },
+      disconnect() { /* close connection */ },
+
+      // Rig category — implement these for radio control:
+      setFreq(hz)   { /* tune to frequency in Hz */ },
+      setMode(mode) { /* set mode string e.g. 'USB' */ },
+      setPTT(on)    { /* key/unkey transmitter */ },
+
+      // Optional — register extra HTTP routes:
+      // registerRoutes(app) { app.get('/my-plugin/...', handler) }
+    };
+  },
+};
+```
+
+**Categories:**
+- `rig` — radio control; the bridge dispatches `/freq`, `/mode`, `/ptt` to the active rig plugin
+- `rotator`, `logger`, `other` — use `registerRoutes(app)` to expose their own endpoints
+
+To register a plugin at startup, call `registry.register(descriptor)` in `rig-bridge.js` before `registry.connectActive()`.
