@@ -400,7 +400,7 @@ export const DockableApp = ({
 
   // Render DE Location panel content
   const renderDELocation = (nodeId) => (
-    <div style={{ padding: '14px', height: '100%', overflowY: 'auto' }}>
+    <div className="panel" style={{ padding: '14px', height: '100%', overflowY: 'auto' }}>
       <div style={{ fontSize: '14px', color: 'var(--accent-cyan)', fontWeight: '700', marginBottom: '10px' }}>
         📍 DE - YOUR LOCATION
       </div>
@@ -430,7 +430,7 @@ export const DockableApp = ({
     const distanceKm = calculateDistance(config.location.lat, config.location.lon, dxLocation.lat, dxLocation.lon);
 
     return (
-      <div style={{ padding: '14px', height: '100%', overflowY: 'auto' }}>
+      <div className="panel" style={{ padding: '14px', height: '100%', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
           <div style={{ fontSize: '14px', color: 'var(--accent-green)', fontWeight: '700' }}>🎯 DX - TARGET</div>
           {handleToggleDxLock && (

@@ -119,6 +119,7 @@ export const AnalogClockPanel = ({ currentTime, sunTimes }) => {
 
   return (
     <div
+      className="panel"
       ref={containerRef}
       style={{
         height: '100%',
