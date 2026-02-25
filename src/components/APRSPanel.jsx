@@ -57,7 +57,10 @@ const APRSPanel = ({ aprsData, showOnMap, onToggleMap, onSpotClick, onHoverSpot 
 
   if (!aprsEnabled) {
     return (
-      <div style={{ padding: '20px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+      <div
+        className="panel"
+        style={{ padding: '20px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}
+      >
         <div style={{ fontSize: '24px', marginBottom: '10px' }}>📍</div>
         <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '8px' }}>APRS Not Enabled</div>
         <div>

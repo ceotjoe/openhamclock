@@ -594,6 +594,7 @@ export const SolarPanel = ({ solarIndices, forcedMode }) => {
 
   return (
     <div
+      className="panel"
       style={{
         height: '100%',
         display: 'flex',
