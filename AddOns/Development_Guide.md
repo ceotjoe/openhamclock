@@ -138,7 +138,16 @@ if (!drawer) {
     launcher.innerHTML = "🧩";
     launcher.title = "L: Toggle | M: Drag | R: Rotate";
     
+    let isDragging = false;
+    let dragTimer = null;
+    let wasDragged = false;
+    let startX, startY, startTop, startLeft;
+
     launcher.onclick = () => {
+        if (wasDragged) {
+            wasDragged = false;
+            return;
+        }
         const items = document.querySelectorAll(".ohc-addon-item");
         const isHidden = Array.from(items).some(el => el.style.display !== "flex");
         items.forEach(el => el.style.display = isHidden ? "flex" : "none");
@@ -153,12 +162,9 @@ if (!drawer) {
         updateLayout();
     };
 
-    let isDragging = false;
-    let dragTimer = null;
-    let startX, startY, startTop, startLeft;
-
     const startDrag = (x, y) => {
         isDragging = true;
+        wasDragged = true;
         startX = x;
         startY = y;
         const rect = drawer.getBoundingClientRect();
@@ -219,6 +225,7 @@ if (!drawer) {
             e.preventDefault();
             startDrag(e.clientX, e.clientY);
         } else if (e.button === 0) { // Left click long press
+            startX = e.clientX; startY = e.clientY;
             dragTimer = setTimeout(() => startDrag(e.clientX, e.clientY), 500);
         }
     };
