@@ -156,7 +156,7 @@
 
     let callsign = 'N0CALL';
     let apiKey = localStorage.getItem(STORAGE_API_KEY) || '';
-    let lastMsgId = localStorage.getItem('ohc_aprs_last_msgid') || '0';
+    let lastUpdateTs = parseInt(localStorage.getItem('ohc_aprs_last_update')) || 0;
 
     function getCallsign() {
         try {
@@ -444,20 +444,45 @@
         }
         const status = document.getElementById("aprs-status");
         status.innerText = "Loading...";
+        
         let queryCalls = baseCall;
-        if (!baseCall.includes('-')) queryCalls = `${baseCall},${baseCall}-7,${baseCall}-9,${baseCall}-10,${baseCall}-1,${baseCall}-2`;
-        const url = `https://api.aprs.fi/api/get?what=msg&dst=${queryCalls}&apikey=${apiKey}&format=json`;
+        if (!baseCall.includes('-')) {
+            queryCalls = `${baseCall},${baseCall}-1,${baseCall}-2,${baseCall}-5,${baseCall}-7,${baseCall}-9,${baseCall}-10,${baseCall}-11,${baseCall}-13,${baseCall}-15`;
+        }
+        
+        const baseUrl = `https://api.aprs.fi/api/get?apikey=${apiKey}&format=json`;
+        const urlIn = `${baseUrl}&what=msg&dst=${queryCalls}`;
+        const urlOut = `${baseUrl}&what=msg&src=${queryCalls}`;
+        const urlLoc = `${baseUrl}&what=loc&name=${queryCalls}`;
 
-        if (typeof GM_xmlhttpRequest !== 'undefined') {
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: url,
-                onload: (response) => { try { handleResponse(JSON.parse(response.responseText)); } catch (e) { status.innerText = "Parse Error"; } },
-                onerror: () => { status.innerText = t('error_api'); }
+        try {
+            const results = await Promise.all([
+                new Promise(r => { if (typeof GM_xmlhttpRequest !== 'undefined') { GM_xmlhttpRequest({ method: "GET", url: urlIn, onload: (res) => r(JSON.parse(res.responseText)) }); } else { fetch(urlIn).then(res => res.json()).then(r); } }),
+                new Promise(r => { if (typeof GM_xmlhttpRequest !== 'undefined') { GM_xmlhttpRequest({ method: "GET", url: urlOut, onload: (res) => r(JSON.parse(res.responseText)) }); } else { fetch(urlOut).then(res => res.json()).then(r); } }),
+                new Promise(r => { if (typeof GM_xmlhttpRequest !== 'undefined') { GM_xmlhttpRequest({ method: "GET", url: urlLoc, onload: (res) => r(JSON.parse(res.responseText)) }); } else { fetch(urlLoc).then(res => res.json()).then(r); } })
+            ]);
+
+            let allEntries = [];
+            if (results[0].result === 'ok') allEntries.push(...(results[0].entries || []));
+            if (results[1].result === 'ok') allEntries.push(...(results[1].entries || []).map(e => ({ ...e, isOut: true })));
+            if (results[2].result === 'ok') {
+                const locs = (results[2].entries || []).filter(e => e.comment).map(e => ({
+                    srccall: e.name, dst: 'STATUS', message: e.comment, time: e.lasttime, isStatus: true
+                }));
+                allEntries.push(...locs);
+            }
+
+            const seen = new Set();
+            allEntries = allEntries.filter(e => {
+                const id = e.messageid ? `m-${e.messageid}` : `s-${e.srccall}-${e.time}`;
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
             });
-        } else {
-            try { const response = await fetch(url); handleResponse(await response.json()); }
-            catch (e) { document.getElementById("aprs-news-content").innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-red);">CORS Error. Use Tampermonkey/Greasemonkey!</div>`; status.innerText = "CORS Error"; }
+
+            handleResponse({ result: 'ok', entries: allEntries });
+        } catch (e) {
+            status.innerText = "Error";
         }
     }
 
@@ -468,14 +493,14 @@
             renderMessages(sortedEntries);
             status.innerText = `${t('last_update')}: ${new Date().toLocaleTimeString()}`;
             if (sortedEntries.length > 0) {
-                const latest = sortedEntries[0].messageid;
-                if (latest > lastMsgId && document.getElementById("aprs-news-container").style.display !== "flex") {
+                const newestTs = sortedEntries[0].time;
+                if (newestTs > lastUpdateTs && document.getElementById("aprs-news-container").style.display !== "flex") {
                     const badge = document.getElementById("aprs-news-badge");
                     badge.innerText = "!";
                     badge.style.display = "flex";
                 }
-                lastMsgId = latest;
-                localStorage.setItem('ohc_aprs_last_msgid', lastMsgId);
+                lastUpdateTs = newestTs;
+                localStorage.setItem('ohc_aprs_last_update', lastUpdateTs);
             }
         } else {
             document.getElementById("aprs-news-content").innerHTML = `<div style="padding: 20px; text-align: center; color: var(--accent-red);">${t('error_api')}: ${data.description || ''}</div>`;
@@ -488,11 +513,12 @@
         if (!entries || entries.length === 0) { content.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-muted);">${t('no_messages')}</div>`; return; }
         content.innerHTML = entries.map(entry => {
             const timeStr = new Date(entry.time * 1000).toLocaleString([], {hour: '2-digit', minute:'2-digit', day: '2-digit', month: '2-digit'});
-            const isToSSID = entry.dst.includes('-');
+            const isToSSID = entry.dst && entry.dst.includes('-');
+            const tag = entry.isOut ? ' <span style="font-size: 8px; color: var(--accent-amber); border: 1px solid var(--accent-amber); padding: 0 2px; border-radius: 2px; margin-left: 4px;">OUT</span>' : (entry.isStatus ? ' <span style="font-size: 8px; color: var(--accent-purple); border: 1px solid var(--accent-purple); padding: 0 2px; border-radius: 2px; margin-left: 4px;">STATUS</span>' : '');
             return `
                 <div class="aprs-msg-entry">
                     <div class="aprs-msg-meta">
-                        <span>${t('from')}: <span class="aprs-msg-call">${entry.srccall}</span></span>
+                        <span><span class="aprs-msg-call">${entry.srccall}</span>${tag}</span>
                         <span>${timeStr}</span>
                     </div>
                     <div class="aprs-msg-text">${entry.message}</div>
