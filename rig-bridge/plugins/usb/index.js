@@ -47,6 +47,7 @@ function createUsbPlugin(radioType) {
       let rxBuffer = '';
       let rxBinaryBuffer = Buffer.alloc(0);
       let reconnectTimer = null;
+      let wasExplicitlyDisconnected = false;
 
       function getIcomAddress() {
         const addr = config.radio.icomAddress || '0x94';
@@ -185,6 +186,7 @@ function createUsbPlugin(radioType) {
         serialPort = null;
         rxBuffer = '';
         rxBinaryBuffer = Buffer.alloc(0);
+        wasExplicitlyDisconnected = false;
 
         console.log(`[USB/${radioType}] Opening ${config.radio.serialPort} at ${config.radio.baudRate} baud...`);
 
@@ -254,19 +256,25 @@ function createUsbPlugin(radioType) {
         });
 
         serialPort.on('error', (err) => {
-          console.error(`[USB/${radioType}] Error: ${err.message}`);
+          if (!wasExplicitlyDisconnected) {
+            console.error(`[USB/${radioType}] Error: ${err.message}`);
+          }
         });
 
         serialPort.on('close', () => {
-          console.log(`[USB/${radioType}] Port closed — retrying in 5 s…`);
           updateState('connected', false);
           stopPolling();
           serialPort = null;
-          reconnectTimer = setTimeout(connect, 5000);
+
+          if (!wasExplicitlyDisconnected) {
+            console.log(`[USB/${radioType}] Port closed — retrying in 5 s…`);
+            reconnectTimer = setTimeout(connect, 5000);
+          }
         });
       }
 
       function disconnect() {
+        wasExplicitlyDisconnected = true;
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;

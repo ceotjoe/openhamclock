@@ -20,6 +20,7 @@ module.exports = {
     let pending = null;
     let pollTimer = null;
     let reconnectTimer = null;
+    let wasExplicitlyDisconnected = false;
 
     function stopPolling() {
       if (pollTimer) {
@@ -83,6 +84,7 @@ module.exports = {
 
     function connect() {
       if (socket) return;
+      wasExplicitlyDisconnected = false;
 
       const host = config.radio.rigctldHost || '127.0.0.1';
       const port = config.radio.rigctldPort || 4532;
@@ -105,22 +107,28 @@ module.exports = {
       });
 
       s.on('close', () => {
-        console.log('[Rigctld] Connection lost — retrying in 5 s…');
         updateState('connected', false);
         socket = null;
         stopPolling();
         pending = null;
         queue = [];
-        reconnectTimer = setTimeout(connect, 5000);
+
+        if (!wasExplicitlyDisconnected) {
+          console.log('[Rigctld] Connection lost — retrying in 5 s…');
+          reconnectTimer = setTimeout(connect, 5000);
+        }
       });
 
       s.on('error', (err) => {
-        console.error(`[Rigctld] Error: ${err.message}`);
+        if (!wasExplicitlyDisconnected) {
+          console.error(`[Rigctld] Error: ${err.message}`);
+        }
         s.destroy();
       });
     }
 
     function disconnect() {
+      wasExplicitlyDisconnected = true;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
