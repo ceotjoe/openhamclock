@@ -36,17 +36,26 @@ const DEFAULT_CONFIG = {
 
 let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
+const CONFIG_EXAMPLE_PATH = path.join(CONFIG_DIR, 'rig-bridge-config.example.json');
+
 function loadConfig() {
   try {
+    // If config doesn't exist, try to copy it from the example
+    if (!fs.existsSync(CONFIG_PATH) && fs.existsSync(CONFIG_EXAMPLE_PATH)) {
+      fs.copyFileSync(CONFIG_EXAMPLE_PATH, CONFIG_PATH);
+      console.log(`[Config] Created ${CONFIG_PATH} from example`);
+    }
+
     if (fs.existsSync(CONFIG_PATH)) {
       const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-      config = {
+      // Update the existing config object in place so references in other modules remain valid
+      Object.assign(config, {
         ...DEFAULT_CONFIG,
         ...raw,
         radio: { ...DEFAULT_CONFIG.radio, ...(raw.radio || {}) },
         // Coerce logging to boolean in case the stored value is a string
         logging: raw.logging !== undefined ? !!raw.logging : DEFAULT_CONFIG.logging,
-      };
+      });
       console.log(`[Config] Loaded from ${CONFIG_PATH}`);
     }
   } catch (e) {
