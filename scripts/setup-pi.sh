@@ -1,18 +1,109 @@
 #!/bin/bash
 #
 # OpenHamClock - Raspberry Pi Setup Script
-# 
-# This script configures a Raspberry Pi for kiosk mode operation
-# Supports: Pi 3B, 3B+, 4, 5 (32-bit and 64-bit Raspberry Pi OS)
 #
-# Usage:
+# ═══════════════════════════════════════════════════════════════════
+# SUPPORTED HARDWARE
+# ═══════════════════════════════════════════════════════════════════
+#
+#   Raspberry Pi 3B / 3B+   (32-bit and 64-bit Raspberry Pi OS)
+#   Raspberry Pi 4           (32-bit and 64-bit Raspberry Pi OS)
+#   Raspberry Pi 5           (64-bit Raspberry Pi OS)
+#
+#   Other Debian-based ARM boards may work but are not tested.
+#   Non-Raspberry Pi hardware will trigger a warning and prompt.
+#
+# ═══════════════════════════════════════════════════════════════════
+# SUPPORTED OPERATING SYSTEMS
+# ═══════════════════════════════════════════════════════════════════
+#
+#   Raspberry Pi OS Bookworm  (Debian 12)  — RECOMMENDED
+#     Display server : X11 (openbox / LXDE)
+#     Kiosk mode     : supported via xset + unclutter + Chromium
+#     Boot config    : /boot/firmware/config.txt
+#
+#   Raspberry Pi OS Trixie    (Debian 13)  — SUPPORTED
+#     Display server : Wayland (labwc) by default
+#     Kiosk mode     : supported; X11 tools (xset, unclutter) are
+#                      skipped automatically; Chromium is launched
+#                      with --ozone-platform=wayland instead
+#     Boot config    : /boot/firmware/config.txt
+#
+#   Raspberry Pi OS Bullseye  (Debian 11)  — LEGACY, best-effort
+#     Display server : X11
+#     Kiosk mode     : supported (same path as Bookworm)
+#     Boot config    : /boot/config.txt
+#     Note: Bullseye reached end-of-life. Upgrade is strongly advised.
+#
+# ═══════════════════════════════════════════════════════════════════
+# NOT SUPPORTED / OUT OF SCOPE
+# ═══════════════════════════════════════════════════════════════════
+#
+#   • Ubuntu, Manjaro, Fedora, or other non-Raspberry Pi OS distros
+#     (different package names, init systems, and display setups)
+#   • Raspberry Pi OS Buster (Debian 10) or older
+#     (Node 22 LTS is not available via NodeSource for Buster)
+#   • Headless-only Pi Zero / Pi Zero 2 W in kiosk mode
+#     (--server mode works; --kiosk requires a display)
+#   • Windows / macOS / generic x86-64 Linux
+#     (see scripts/setup-linux.sh for Linux desktop installs)
+#
+# ═══════════════════════════════════════════════════════════════════
+# PREREQUISITES
+# ═══════════════════════════════════════════════════════════════════
+#
+#   • A clean or up-to-date Raspberry Pi OS install
+#   • Internet access during setup (NodeSource, apt, npm, GitHub)
+#   • sudo privileges for the running user
+#   • At least 1 GB free disk space (build artefacts + node_modules)
+#   • At least 512 MB RAM (1 GB+ recommended for the npm build step)
+#
+# ═══════════════════════════════════════════════════════════════════
+# WHAT THIS SCRIPT DOES
+# ═══════════════════════════════════════════════════════════════════
+#
+#   1. Updates system packages (apt-get update && upgrade)
+#   2. Installs Node.js 22 LTS via NodeSource
+#   3. Installs system dependencies (Chromium, fonts, display tools)
+#   4. Clones or updates the OpenHamClock repository
+#   5. Runs npm install and npm run build
+#   6. Creates /home/<user>/.env from .env.example (if absent)
+#   7. Creates and enables a systemd service (openhamclock.service)
+#   8. [--kiosk] Writes kiosk.sh that auto-detects Wayland vs X11
+#      and launches Chromium in fullscreen on login
+#
+# ═══════════════════════════════════════════════════════════════════
+# KIOSK MODE DETAILS
+# ═══════════════════════════════════════════════════════════════════
+#
+#   The kiosk launcher (~openhamclock/kiosk.sh) is placed in
+#   ~/.config/autostart/ and runs on every desktop login.
+#
+#   At runtime kiosk.sh reads $XDG_SESSION_TYPE to choose the
+#   correct display path:
+#
+#     Wayland  →  Chromium launched with --ozone-platform=wayland
+#                 xset / unclutter are NOT called (X11-only tools)
+#
+#     X11      →  DISPLAY=:0 is set explicitly (not always inherited
+#                 from the autostart context), then xset disables the
+#                 screensaver and unclutter hides the cursor
+#
+#   If the OpenHamClock server does not respond within 60 seconds,
+#   kiosk.sh exits with an error rather than looping forever.
+#
+# ═══════════════════════════════════════════════════════════════════
+# USAGE
+# ═══════════════════════════════════════════════════════════════════
+#
 #   chmod +x setup-pi.sh
-#   ./setup-pi.sh
+#   ./setup-pi.sh               # server only (no kiosk)
+#   ./setup-pi.sh --kiosk       # server + fullscreen kiosk on boot
+#   ./setup-pi.sh --server      # headless server, no GUI packages
+#   ./setup-pi.sh --help        # show option summary
 #
-# Options:
-#   --kiosk     Enable kiosk mode (auto-start on boot)
-#   --server    Install as a server (no GUI)
-#   --help      Show help
+#   After installation, edit ~/openhamclock/.env to set your
+#   CALLSIGN and LOCATOR before (re)starting the service.
 #
 
 set -e
