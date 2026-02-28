@@ -27,7 +27,7 @@ NC='\033[0m' # No Color
 # Configuration
 INSTALL_DIR="$HOME/openhamclock"
 SERVICE_NAME="openhamclock"
-NODE_VERSION="20"
+NODE_VERSION="22"
 
 # Print banner
 echo -e "${BLUE}"
@@ -103,7 +103,10 @@ install_nodejs() {
     fi
     
     # Install Node.js via NodeSource
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash -
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash - || {
+        echo -e "${RED}✗ NodeSource setup failed. Check your Debian version and internet connection.${NC}"
+        exit 1
+    }
     sudo apt-get install -y nodejs
     
     echo -e "${GREEN}✓ Node.js $(node -v) installed${NC}"
@@ -161,14 +164,36 @@ setup_repository() {
     
     # Make update script executable
     chmod +x scripts/update.sh 2>/dev/null || true
-    
+
+    # Create .env from the example template if it doesn't exist yet.
+    # The example defaults PORT=3001 (dev mode, to avoid conflicts with Vite).
+    # On a Pi production install everything runs on port 3000, so override that.
+    if [ ! -f .env ]; then
+        cp .env.example .env
+        # Switch to the production port used by the systemd service and kiosk
+        sed -i 's/^PORT=3001$/PORT=3000/' .env
+        echo -e "${YELLOW}⚠ A default .env file has been created at $INSTALL_DIR/.env${NC}"
+        echo -e "${YELLOW}  Edit it to set your CALLSIGN and LOCATOR before starting.${NC}"
+    else
+        echo -e "${GREEN}✓ Existing .env kept — not overwritten${NC}"
+    fi
+
     echo -e "${GREEN}✓ OpenHamClock installed to $INSTALL_DIR${NC}"
 }
 
 # Create systemd service
 create_service() {
     echo -e "${BLUE}>>> Creating systemd service...${NC}"
-    
+
+    # Resolve the node binary path at install time so the service works regardless
+    # of whether Node was installed via NodeSource deb, nvm, or any other method.
+    NODE_BIN=$(command -v node)
+    if [ -z "$NODE_BIN" ]; then
+        echo -e "${RED}✗ Cannot find node binary — Node.js installation may have failed.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}  Using node at: $NODE_BIN${NC}"
+
     sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null << EOF
 [Unit]
 Description=OpenHamClock Server
@@ -178,11 +203,13 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/node server.js
+ExecStart=$NODE_BIN server.js
 Restart=always
 RestartSec=10
 SuccessExitStatus=75
 Environment=NODE_ENV=production
+# PORT is read from .env; set here only as a fallback so the service always
+# has a defined value even if .env is missing or PORT is not set there.
 Environment=PORT=3000
 
 [Install]
@@ -200,8 +227,8 @@ EOF
 setup_kiosk() {
     echo -e "${BLUE}>>> Configuring kiosk mode...${NC}"
     
-    # Disable screen blanking
-    sudo raspi-config nonint do_blanking 1 2>/dev/null || true
+    # Disable screen blanking (0 = disable, 1 = enable — keep the screen on for kiosk)
+    sudo raspi-config nonint do_blanking 0 2>/dev/null || true
     
     # Create autostart directory
     mkdir -p "$HOME/.config/autostart"
@@ -210,41 +237,95 @@ setup_kiosk() {
     cat > "$INSTALL_DIR/kiosk.sh" << 'EOF'
 #!/bin/bash
 # OpenHamClock Kiosk Launcher
+# Supports Raspberry Pi OS Bookworm (X11) and Trixie (Wayland/labwc)
 
-# Wait for desktop
+# Wait for the desktop environment to be ready
 sleep 5
 
-# Disable screen saver and power management
-xset s off
-xset -dpms
-xset s noblank
+# ------------------------------------------------------------------
+# Detect display server: Wayland or X11
+# $XDG_SESSION_TYPE is set by the session manager on both Bookworm and Trixie.
+# Fall back to checking $WAYLAND_DISPLAY in case the variable isn't exported.
+# ------------------------------------------------------------------
+SESSION_TYPE="${XDG_SESSION_TYPE:-}"
+if [ -z "$SESSION_TYPE" ] && [ -n "$WAYLAND_DISPLAY" ]; then
+    SESSION_TYPE="wayland"
+fi
+if [ -z "$SESSION_TYPE" ]; then
+    # Last resort: default to x11 so the script always does something useful
+    SESSION_TYPE="x11"
+fi
 
-# Hide mouse cursor
-unclutter -idle 1 -root &
+echo "OpenHamClock kiosk: detected session type = $SESSION_TYPE"
 
-# Wait for server to be ready
-while ! curl -s http://localhost:3000/api/health > /dev/null; do
+if [ "$SESSION_TYPE" = "wayland" ]; then
+    # ------------------------------------------------------------------
+    # Wayland path (Raspberry Pi OS Trixie with labwc)
+    # xset and unclutter require an X server — skip them entirely.
+    # Screen blanking is disabled system-wide via raspi-config at install time.
+    # ------------------------------------------------------------------
+    CHROMIUM_EXTRA_FLAGS="--ozone-platform=wayland --enable-features=UseOzonePlatform,WaylandWindowDecorations"
+else
+    # ------------------------------------------------------------------
+    # X11 path (Raspberry Pi OS Bookworm with openbox/LXDE)
+    # DISPLAY=:0 must be set explicitly — it is not always inherited when
+    # the script is launched from an XDG autostart .desktop file.
+    # ------------------------------------------------------------------
+    export DISPLAY="${DISPLAY:-:0}"
+
+    # Disable screen saver and power management
+    xset s off    2>/dev/null || true
+    xset -dpms    2>/dev/null || true
+    xset s noblank 2>/dev/null || true
+
+    # Hide mouse cursor after 1 second of inactivity
+    unclutter -idle 1 -root &
+
+    CHROMIUM_EXTRA_FLAGS=""
+fi
+
+# ------------------------------------------------------------------
+# Wait for the OpenHamClock server to be ready (max 60 seconds)
+# ------------------------------------------------------------------
+HEALTH_URL="http://localhost:3000/api/health"
+MAX_WAIT=60
+WAITED=0
+until curl -s "$HEALTH_URL" > /dev/null 2>&1; do
+    if [ "$WAITED" -ge "$MAX_WAIT" ]; then
+        echo "ERROR: OpenHamClock server did not respond within ${MAX_WAIT}s."
+        echo "Check the service: sudo systemctl status openhamclock"
+        exit 1
+    fi
     sleep 1
+    WAITED=$((WAITED + 1))
 done
+echo "Server ready after ${WAITED}s."
 
-# Launch Chromium in kiosk mode
-# Use 'chromium' on newer Pi OS, 'chromium-browser' on older
+# ------------------------------------------------------------------
+# Choose Chromium binary
+# 'chromium' on Bookworm+, 'chromium-browser' on older images
+# ------------------------------------------------------------------
 if command -v chromium &> /dev/null; then
     CHROME_CMD="chromium"
 else
     CHROME_CMD="chromium-browser"
 fi
 
-# Clean up any crash lock files from unclean shutdown
-# Prevents "Chromium didn't shut down correctly" bar in kiosk mode
+# ------------------------------------------------------------------
+# Clear stale crash-recovery prompts from unclean shutdowns
+# Prevents the "Chromium didn't shut down correctly" bar in kiosk mode
+# ------------------------------------------------------------------
 KIOSK_PROFILE="$HOME/.config/openhamclock-kiosk"
 mkdir -p "$KIOSK_PROFILE"
 sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$KIOSK_PROFILE/Default/Preferences" 2>/dev/null || true
 sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$KIOSK_PROFILE/Default/Preferences" 2>/dev/null || true
 
-# Trap Ctrl+Q to exit kiosk cleanly
+# ------------------------------------------------------------------
+# Launch Chromium in kiosk mode
+# ------------------------------------------------------------------
 trap 'pkill -f "chromium.*kiosk"; exit 0' SIGTERM SIGINT
 
+# shellcheck disable=SC2086  # CHROMIUM_EXTRA_FLAGS is intentionally word-split
 $CHROME_CMD \
     --kiosk \
     --noerrdialogs \
@@ -256,7 +337,8 @@ $CHROME_CMD \
     --disable-component-update \
     --overscroll-history-navigation=0 \
     --disable-pinch \
-    --user-data-dir=$HOME/.config/openhamclock-kiosk \
+    --user-data-dir="$HOME/.config/openhamclock-kiosk" \
+    $CHROMIUM_EXTRA_FLAGS \
     http://localhost:3000 &
 
 CHROME_PID=$!
@@ -282,17 +364,29 @@ Hidden=false
 X-GNOME-Autostart-enabled=true
 EOF
     
-    # Configure boot for faster startup
-    if [ -f /boot/config.txt ]; then
+    # Configure boot for faster startup.
+    # Bookworm and later (including Trixie) moved the config to /boot/firmware/config.txt.
+    # Bullseye and older use /boot/config.txt.
+    if [ -f /boot/firmware/config.txt ]; then
+        BOOT_CONFIG=/boot/firmware/config.txt
+    elif [ -f /boot/config.txt ]; then
+        BOOT_CONFIG=/boot/config.txt
+    else
+        BOOT_CONFIG=""
+    fi
+
+    if [ -n "$BOOT_CONFIG" ]; then
         # Disable splash screen for faster boot
-        if ! grep -q "disable_splash=1" /boot/config.txt; then
-            echo "disable_splash=1" | sudo tee -a /boot/config.txt > /dev/null
+        if ! grep -q "disable_splash=1" "$BOOT_CONFIG"; then
+            echo "disable_splash=1" | sudo tee -a "$BOOT_CONFIG" > /dev/null
         fi
-        
-        # Allocate more GPU memory
-        if ! grep -q "gpu_mem=" /boot/config.txt; then
-            echo "gpu_mem=128" | sudo tee -a /boot/config.txt > /dev/null
+
+        # Allocate more GPU memory for smooth rendering
+        if ! grep -q "gpu_mem=" "$BOOT_CONFIG"; then
+            echo "gpu_mem=128" | sudo tee -a "$BOOT_CONFIG" > /dev/null
         fi
+    else
+        echo -e "${YELLOW}⚠ Boot config not found — skipping gpu_mem and splash settings${NC}"
     fi
     
     echo -e "${GREEN}✓ Kiosk mode configured${NC}"
