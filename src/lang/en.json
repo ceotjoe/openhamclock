@@ -115,6 +115,8 @@
   "plugins.layers.wildfires.description": "Active wildfires worldwide via NASA EONET satellite detection",
   "plugins.layers.floods.name": "Floods & Storms",
   "plugins.layers.floods.description": "Active floods and severe storms worldwide via NASA EONET",
+  "plugins.layers.tornadoWarnings.name": "Tornado Warnings",
+  "plugins.layers.tornadoWarnings.description": "Active NWS tornado watches, warnings & emergencies (US)",
   "plugins.layers.grayline.name": "Gray Line",
   "plugins.layers.grayline.description": "Day/night terminator with twilight zones",
   "plugins.layers.grayline.title": "Gray Line",
