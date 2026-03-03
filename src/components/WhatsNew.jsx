@@ -5,10 +5,133 @@
  */
 import { useState, useEffect } from 'react';
 
+// ─── Announcement Banner ────────────────────────────────────
+// Set to null to hide. Shown at the top of the What's New modal.
+const ANNOUNCEMENT = {
+  emoji: '🎪',
+  text: 'OpenHamClock will be at Dayton Hamvention 2025! Come visit us in the Flea Market area — Booth #9518. Say hi, see a live demo, and grab some stickers!',
+  color: '#ff6b35',
+  bg: 'rgba(255, 107, 53, 0.10)',
+  border: 'rgba(255, 107, 53, 0.30)',
+};
+
 // ─── Changelog ──────────────────────────────────────────────
 // Add new versions at the TOP of this array.
 // Each entry: { version, date, heading, features: [...] }
 const CHANGELOG = [
+  {
+    version: '15.6.4',
+    date: '2026-03-04',
+    heading:
+      'Tornado warnings layer, keyboard shortcuts, TCI/SDR support, Band Health in Modern Layout, auto-rotating panels, PSK grid mode, WSJT-X DX targeting, and a massive satellite & rig-bridge overhaul.',
+    features: [
+      {
+        icon: '🌪️',
+        title: 'Tornado Warnings Map Layer',
+        desc: 'Real-time NWS tornado watches, warnings, and emergencies rendered as color-coded GeoJSON polygons on the map. Severity levels: Tornado Emergency (magenta), Tornado Warning (red), Tornado Watch (yellow), Severe Thunderstorm Warning (orange). Auto-refreshes every 2 minutes and appears automatically when active warnings exist. Built for SKYWARN and ARES operators.',
+      },
+      {
+        icon: '⌨️',
+        title: 'Keyboard Shortcuts',
+        desc: 'Press ? to open a keyboard shortcuts panel. Every map layer gets a single-key toggle (G=Grayline, S=Satellites, W=WX Radar, etc). Shortcuts are pinned — adding new layers never reshuffles existing keys. Modifier keys (Ctrl, Alt, Cmd) pass through to the browser so Ctrl+Shift+R still hard-refreshes.',
+      },
+      {
+        icon: '📶',
+        title: 'Band Health in Modern Layout',
+        desc: 'The propagation panel now cycles through four views: VOACAP Chart → VOACAP Bars → Band Conditions → Band Health. Band Health (previously dockable-only) shows real-time HF band usability based on DX cluster spot activity with mode filtering and configurable time windows.',
+      },
+      {
+        icon: '🔄',
+        title: 'Auto-Rotating Panels',
+        desc: 'Solar and Propagation panels can now auto-rotate through their views on a configurable timer (5–60 seconds). Click the ▶ button in the panel header to start, ⏸ to stop, and pick your interval from the dropdown. In Dockable Layout, any tabset with 2+ tabs gets the same rotate controls in the toolbar. All settings persist across refresh.',
+      },
+      {
+        icon: '📡',
+        title: 'TCI Protocol — SDR Rig Control',
+        desc: 'rig-listener v1.1.0 adds TCI (Transceiver Control Interface) support for WebSocket-based SDR applications: Thetis/HL2, ANAN, SunSDR, and ExpertSDR. Unlike serial CAT, TCI pushes state in real-time — no polling. Quick-start with --tci flag or configure host/port/TRX/VFO in the setup wizard.',
+      },
+      {
+        icon: '🛰️',
+        title: 'PSK Reporter Grid Mode',
+        desc: 'Filter PSK Reporter spots by Maidenhead grid square instead of callsign. Useful for monitoring activity in your region or a target grid for contests. Select Call vs Grid mode in the PSK Reporter Source tab — the server subscribes to MQTT topics for the selected grid prefix.',
+      },
+      {
+        icon: '🎯',
+        title: 'WSJT-X DX Target Auto-Set',
+        desc: 'When you select a callsign in WSJT-X, OpenHamClock automatically resolves it to coordinates and sets the DX target on the map — same as clicking a spot. Uses a 4-step location cascade: WSJT-X grid → grid cache → callsign lookup cache → prefix estimation. Also auto-clears stale decodes on band changes.',
+      },
+      {
+        icon: '📻',
+        title: 'WSPR Decode Display',
+        desc: 'WSPR decodes now appear in the WSJT-X panel in a dedicated sub-tab showing callsign, grid, SNR, drift, and power. Spots are enriched with lat/lon for map clicks. The hasDataFlowing indicator now accounts for WSPR activity.',
+      },
+      {
+        icon: '🗺️',
+        title: 'DX Grid Square Input',
+        desc: 'Click the DX grid display in Modern or Classic layout to manually type a Maidenhead locator (e.g. JN58sm). Press Enter to set the DX target. The input validates the grid format and resolves to coordinates instantly.',
+      },
+      {
+        icon: '🔧',
+        title: 'Rig-Bridge Plugin Architecture',
+        desc: 'Complete refactor of rig-bridge from a monolithic 1500-line file into a modular core/plugins architecture. Plugins for flrig, rigctld, mock, WSJT-X relay, and USB serial protocols (Icom CI-V, Kenwood, Yaesu) are now independently loadable. Config-driven via rig-bridge-config.json.',
+      },
+      {
+        icon: '👁️',
+        title: 'DE/DX Markers Toggle',
+        desc: 'Toggle DE and DX station markers on/off from Map Layers settings. Useful when you want a cleaner map view or are using the azimuthal projection where markers can obscure the polar regions.',
+      },
+      {
+        icon: '🛰️',
+        title: 'Satellite List Overhaul',
+        desc: 'Removed 11 dead/decayed/non-ham satellites (AO-92, PO-101, AO-27, RS-15, etc.) and added 4 new active ones (AO-123, SO-124, SO-125, QMR-KWT-2). Fixed TEVEL constellation NORAD IDs per AMSAT bulletin. ISS consolidated to single entry. TLE parser now filters to curated NORAD IDs only — no more clutter from 100+ dead cubesats.',
+      },
+      {
+        icon: '🛰️',
+        title: 'TLE Gap-Fill: CelesTrak + SatNOGS',
+        desc: "Satellites missing from CelesTrak's bulk group files are now individually fetched by NORAD catalog number, with SatNOGS as a fallback. Batched in groups of 5 with rate limiting. New /api/satellites/debug endpoint shows exactly which sats resolved and which are still missing.",
+      },
+      {
+        icon: '🐳',
+        title: 'Docker Deployment',
+        desc: 'New comprehensive DOCKER.md with production-ready docker-compose.yml. Includes env var configuration, N1MM UDP port mapping, health checks, and Railway deployment notes.',
+      },
+      {
+        icon: '🖥️',
+        title: 'Raspberry Pi Trixie & Wayland',
+        desc: 'setup-pi.sh now supports Raspberry Pi OS Trixie (Debian 13) which defaults to Wayland/labwc instead of X11. Chromium launches with --ozone-platform=wayland automatically. X11 tools (xset, unclutter) are skipped on Wayland systems.',
+      },
+      {
+        icon: '🐧',
+        title: 'Linux/macOS systemd Service',
+        desc: 'setup-linux.sh now creates a proper systemd unit file for auto-start on boot. Includes service management instructions and platform-specific notes for macOS (where systemd is not available).',
+      },
+      {
+        icon: '📏',
+        title: 'Independent Unit Settings',
+        desc: 'Distance, temperature, and barometric pressure units can now be set independently instead of a single imperial/metric toggle. Want miles but Celsius? Now you can.',
+      },
+      {
+        icon: '🔧',
+        title: 'Drag-to-Reposition Simplified',
+        desc: 'Map legend panels no longer require Ctrl+drag to reposition — just drag the title bar directly. Double-click the title to reset to default position.',
+      },
+      {
+        icon: '📊',
+        title: 'DXpedition Panel: 20 Results',
+        desc: 'DXpedition panel now shows up to 20 upcoming/active DXpeditions, up from 4. The server already returned 50 — the client was just truncating too aggressively.',
+      },
+      {
+        icon: '🔍',
+        title: 'DX Cluster Filter Tolerance',
+        desc: 'Widened the digital mode frequency matching tolerance from ±3 kHz to ±5 kHz. Edge frequency spots like 24.911 MHz for 12m FT8 (dial 24.915) were being missed with the tighter window.',
+      },
+      {
+        icon: '🕐',
+        title: 'Contest Panel Hour Fix',
+        desc: 'Contest countdown now always shows hours — "0H 39m left" instead of just "39m left" when under an hour remains. Consistent formatting across all languages.',
+      },
+    ],
+  },
   {
     version: '15.6.3',
     date: '2026-02-24',
@@ -691,6 +814,25 @@ export default function WhatsNew() {
           >
             {entry.heading}
           </div>
+          {ANNOUNCEMENT && (
+            <div
+              style={{
+                fontSize: '13px',
+                fontWeight: '600',
+                color: ANNOUNCEMENT.color,
+                marginTop: '12px',
+                padding: '10px 14px',
+                background: ANNOUNCEMENT.bg,
+                borderRadius: '8px',
+                border: `1px solid ${ANNOUNCEMENT.border}`,
+                lineHeight: '1.5',
+                textAlign: 'center',
+              }}
+            >
+              <span style={{ fontSize: '18px', display: 'block', marginBottom: '4px' }}>{ANNOUNCEMENT.emoji}</span>
+              {ANNOUNCEMENT.text}
+            </div>
+          )}
           {entry.notice && (
             <div
               style={{
