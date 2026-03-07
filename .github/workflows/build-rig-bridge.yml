@@ -83,6 +83,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare release notes
+        run: |
+          echo "Automated build from branch \`${{ github.ref_name }}\`" > release-notes.md
+          echo "" >> release-notes.md
+          echo "**Commit:** ${{ github.sha }}" >> release-notes.md
+          echo "**Message:** ${{ github.event.head_commit.message }}" >> release-notes.md
+          echo "" >> release-notes.md
+          echo "---" >> release-notes.md
+          echo "" >> release-notes.md
+          cat rig-bridge/README.md >> release-notes.md
+
+
       - name: Create rolling release
         uses: softprops/action-gh-release@v2
         with:
@@ -90,13 +102,8 @@ jobs:
           name: "Rig Bridge – Latest"
           prerelease: true
           make_latest: false
-          body: |
-            Automated build from branch `${{ github.ref_name }}`
+          body_path: release-notes.md
 
-            **Commit:** ${{ github.sha }}
-            **Message:** ${{ github.event.head_commit.message }}
-
-            > This is a rolling pre-release. Each push to the branch overwrites this release.
           files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
