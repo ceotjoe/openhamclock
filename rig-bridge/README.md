@@ -35,6 +35,14 @@ TCI (Transceiver Control Interface) is a WebSocket-based protocol used by modern
 | **flrig**   | XML-RPC  | 12345        |
 | **rigctld** | TCP      | 4532         |
 
+### For Testing (No Hardware Required)
+
+| Type                | Description                                                          |
+| ------------------- | -------------------------------------------------------------------- |
+| **Simulated Radio** | Fake radio that drifts through several bands — no serial port needed |
+
+Enable by setting `radio.type = "mock"` in `rig-bridge-config.json` or selecting **Simulated Radio** in the setup UI.
+
 ---
 
 ## Quick Start
@@ -135,6 +143,47 @@ The bridge auto-reconnects every 5 s if the connection drops — just restart yo
 
 ---
 
+## WSJT-X Relay
+
+The WSJT-X Relay is an **integration plugin** (not a radio plugin) that listens for WSJT-X UDP packets on the local machine and forwards decoded messages to an OpenHamClock server in real-time. This lets OpenHamClock display your FT8/FT4 decodes as DX spots without any manual intervention.
+
+### Setup
+
+Edit `rig-bridge-config.json`:
+
+```json
+{
+  "wsjtxRelay": {
+    "enabled": true,
+    "url": "https://openhamclock.com",
+    "key": "your-relay-key",
+    "session": "your-session-id",
+    "udpPort": 2237,
+    "batchInterval": 2000,
+    "verbose": false
+  }
+}
+```
+
+| Field           | Description                                      | Default                    |
+| --------------- | ------------------------------------------------ | -------------------------- |
+| `enabled`       | Activate the relay on startup                    | `false`                    |
+| `url`           | OpenHamClock server URL                          | `https://openhamclock.com` |
+| `key`           | Relay authentication key (from your OHC account) | —                          |
+| `session`       | Browser session ID for per-user isolation        | —                          |
+| `udpPort`       | UDP port WSJT-X is sending to                    | `2237`                     |
+| `batchInterval` | How often decoded messages are sent (ms)         | `2000`                     |
+| `verbose`       | Log every decoded message to the console         | `false`                    |
+
+### In WSJT-X
+
+Make sure WSJT-X is configured to send UDP packets to `localhost` on the same port as `udpPort` (default `2237`):
+**File → Settings → Reporting → UDP Server → `127.0.0.1:2237`**
+
+The relay runs alongside your radio plugin — you can use direct USB or TCI at the same time.
+
+---
+
 ## OpenHamClock Setup
 
 Once the bridge is running and showing your frequency:
@@ -215,13 +264,15 @@ rig-bridge/
 │
 └── plugins/
     ├── usb/
-    │   ├── index.js           # USB serial lifecycle (open, reconnect, poll)
-    │   ├── protocol-yaesu.js  # Yaesu CAT ASCII protocol
-    │   ├── protocol-kenwood.js# Kenwood ASCII protocol
-    │   └── protocol-icom.js   # Icom CI-V binary protocol
+    │   ├── index.js            # USB serial lifecycle (open, reconnect, poll)
+    │   ├── protocol-yaesu.js   # Yaesu CAT ASCII protocol
+    │   ├── protocol-kenwood.js # Kenwood ASCII protocol
+    │   └── protocol-icom.js    # Icom CI-V binary protocol
+    ├── tci.js             # TCI/SDR WebSocket plugin (Thetis, ExpertSDR, etc.)
     ├── rigctld.js         # rigctld TCP plugin
     ├── flrig.js           # flrig XML-RPC plugin
-    └── tci.js             # TCI/SDR WebSocket plugin (Thetis, ExpertSDR, etc.)
+    ├── mock.js            # Simulated radio for testing (no hardware needed)
+    └── wsjtx-relay.js     # WSJT-X UDP listener → OpenHamClock relay
 ```
 
 ---
@@ -234,7 +285,7 @@ Each plugin exports an object with the following shape:
 module.exports = {
   id: 'my-plugin', // Unique identifier (matches config.radio.type)
   name: 'My Plugin', // Human-readable name
-  category: 'rig', // 'rig' | 'rotator' | 'logger' | 'other'
+  category: 'rig', // 'rig' | 'integration' | 'rotator' | 'logger' | 'other'
   configKey: 'radio', // Which config section this plugin reads
 
   create(config, { updateState, state }) {
@@ -267,6 +318,7 @@ module.exports = {
 **Categories:**
 
 - `rig` — radio control; the bridge dispatches `/freq`, `/mode`, `/ptt` to the active rig plugin
+- `integration` — background service plugins (e.g. WSJT-X relay); started via `registry.connectIntegrations()`
 - `rotator`, `logger`, `other` — use `registerRoutes(app)` to expose their own endpoints
 
 To register a plugin at startup, call `registry.register(descriptor)` in `rig-bridge.js` before `registry.connectActive()`.
