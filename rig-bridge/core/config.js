@@ -5,13 +5,22 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // Portable config path (works in pkg snapshots too)
 const CONFIG_DIR = process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'rig-bridge-config.json');
 
 const DEFAULT_CONFIG = {
+  serverHost: '127.0.0.1',
   port: 5555,
+  apiKey: '',
+  allowedOrigins: [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://openhamclock.com',
+    'https://www.openhamclock.com',
+  ],
   debug: false, // Centralized verbose CAT logging flag
   logging: true, // Enable/disable console log capture & broadcast to UI
   radio: {
@@ -76,6 +85,13 @@ function loadConfig() {
       });
       console.log(`[Config] Loaded from ${CONFIG_PATH}`);
     }
+
+    // Auto-generate API Key if not present
+    if (!config.apiKey || config.apiKey.trim() === '') {
+      config.apiKey = crypto.randomBytes(16).toString('hex');
+      console.log('[Config] Auto-generated secure API Key.');
+      saveConfig(); // Persist the new key immediately
+    }
   } catch (e) {
     console.error('[Config] Failed to load:', e.message);
   }
@@ -93,7 +109,8 @@ function saveConfig() {
 function applyCliArgs() {
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--port') config.port = parseInt(args[++i]);
+    if (args[i] === '--port') config.port = parseInt(args[++i], 10);
+    if (args[i] === '--host') config.serverHost = args[++i];
     if (args[i] === '--debug') config.debug = true;
   }
 }

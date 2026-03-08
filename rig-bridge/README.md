@@ -50,8 +50,8 @@ Enable by setting `radio.type = "mock"` in `rig-bridge-config.json` or selecting
 ### Option A: Download the Executable (Easiest)
 
 1. Download the right file for your OS from the Releases page
-2. Double-click to run
-3. Open **http://localhost:5555** in your browser
+2. Double-click to run. Keep the terminal window open—it will print your auto-generated **API Key**.
+3. Open **http://localhost:5555** in your browser. (The username is `admin`, the password is the API Key).
 4. Select your radio type and COM port
 5. Click **Save & Connect**
 
@@ -68,8 +68,9 @@ Then open **http://localhost:5555** to configure.
 **Options:**
 
 ```bash
-node rig-bridge.js --port 8080   # Use a different port
-node rig-bridge.js --debug       # Enable raw hex/ASCII CAT traffic logging
+node rig-bridge.js --port 8080        # Use a different port
+node rig-bridge.js --host 0.0.0.0     # Bind to all interfaces (defaults to 127.0.0.1 for security)
+node rig-bridge.js --debug            # Enable raw hex/ASCII CAT traffic logging
 ```
 
 ---
@@ -192,7 +193,8 @@ Once the bridge is running and showing your frequency:
 2. Scroll to **Rig Control**
 3. Check **Enable Rig Control**
 4. Set Host URL: `http://localhost:5555`
-5. Click any DX spot, POTA, or SOTA to tune your radio!
+5. Enter your **API Key** (found in the `rig-bridge` terminal output or changing `rig-bridge-config.json`).
+6. Click any DX spot, POTA, or SOTA to tune your radio!
 
 ---
 
@@ -216,18 +218,20 @@ Executables are output to the `dist/` folder.
 
 ## Troubleshooting
 
-| Problem                   | Solution                                                                         |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| No COM ports found        | Install USB driver (Silicon Labs CP210x for Yaesu, FTDI for some Kenwood)        |
-| Port opens but no data    | Check baud rate matches radio's CAT Rate setting                                 |
-| Icom not responding       | Verify CI-V address matches your radio model                                     |
-| CORS errors in browser    | The bridge allows all origins by default                                         |
-| Port already in use       | Close flrig/rigctld if running — you don't need them anymore                     |
-| PTT not responsive        | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)               |
-| macOS Comms Failure       | The bridge automatically applies a `stty` fix for CP210x drivers.                |
-| TCI: Connection refused   | Enable TCI in your SDR app (Thetis → Setup → CAT Control → Enable TCI Server)    |
-| TCI: No frequency updates | Check `trx` / `vfo` index in config match the active transceiver in your SDR app |
-| TCI: Remote SDR           | Set `tci.host` to the IP of the machine running the SDR application              |
+| Problem                       | Solution                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| Setup UI prompts for password | Username is `admin`, password is your generated API key (printed in terminal).   |
+| Cannot access from another PC | For security, it binds to `127.0.0.1`. Use `--host 0.0.0.0` to allow LAN access. |
+| No COM ports found            | Install USB driver (Silicon Labs CP210x for Yaesu, FTDI for some Kenwood)        |
+| Port opens but no data        | Check baud rate matches radio's CAT Rate setting                                 |
+| Icom not responding           | Verify CI-V address matches your radio model                                     |
+| CORS errors in browser        | Add OpenHamClock URL to the `allowedOrigins` array in config                     |
+| Port already in use           | Close flrig/rigctld if running — you don't need them anymore                     |
+| PTT not responsive            | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)               |
+| macOS Comms Failure           | The bridge automatically applies a `stty` fix for CP210x drivers.                |
+| TCI: Connection refused       | Enable TCI in your SDR app (Thetis → Setup → CAT Control → Enable TCI Server)    |
+| TCI: No frequency updates     | Check `trx` / `vfo` index in config match the active transceiver in your SDR app |
+| TCI: Remote SDR               | Set `tci.host` to the IP of the machine running the SDR application              |
 
 ---
 

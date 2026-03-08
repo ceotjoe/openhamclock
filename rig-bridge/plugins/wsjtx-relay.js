@@ -452,7 +452,7 @@ const descriptor = {
         }, 60000);
       });
 
-      socket.bind(udpPort, '0.0.0.0');
+      socket.bind(udpPort, '127.0.0.1');
     }
 
     function disconnect() {

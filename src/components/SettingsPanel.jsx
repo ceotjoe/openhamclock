@@ -61,6 +61,7 @@ export const SettingsPanel = ({
   const [rigEnabled, setRigEnabled] = useState(config?.rigControl?.enabled || false);
   const [rigHost, setRigHost] = useState(config?.rigControl?.host || 'http://localhost');
   const [rigPort, setRigPort] = useState(normalizeRigPort(config?.rigControl?.port));
+  const [rigApiKey, setRigApiKey] = useState(config?.rigControl?.apiKey || '');
   const [tuneEnabled, setTuneEnabled] = useState(config?.rigControl?.tuneEnabled || false);
   const [autoMode, setAutoMode] = useState(config?.rigControl?.autoMode !== false);
   const [satelliteSearch, setSatelliteSearch] = useState('');
@@ -169,6 +170,7 @@ export const SettingsPanel = ({
       setRigEnabled(config.rigControl?.enabled || false);
       setRigHost(config.rigControl?.host || 'http://localhost');
       setRigPort(normalizeRigPort(config.rigControl?.port));
+      setRigApiKey(config.rigControl?.apiKey || '');
       setTuneEnabled(config.rigControl?.tuneEnabled || false);
       setAutoMode(config.rigControl?.autoMode !== false);
       if (config.location?.lat && config.location?.lon) {
@@ -392,6 +394,7 @@ export const SettingsPanel = ({
         enabled: rigEnabled,
         host: rigHost,
         port: nextRigPort,
+        apiKey: rigApiKey,
         tuneEnabled,
         autoMode,
       },
@@ -1205,6 +1208,35 @@ export const SettingsPanel = ({
                             boxSizing: 'border-box',
                           }}
                         />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '10px' }}>
+                      <label
+                        style={{ display: 'block', marginBottom: '4px', color: 'var(--text-muted)', fontSize: '10px' }}
+                      >
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={rigApiKey}
+                        onChange={(e) => setRigApiKey(e.target.value)}
+                        placeholder="Leave blank for unauthenticated connections"
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          background: 'var(--bg-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          color: 'var(--accent-cyan)',
+                          fontSize: '13px',
+                          fontFamily: 'JetBrains Mono',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        Required for secure rig-bridge connections. Check rig-bridge startup logs or
+                        rig-bridge-config.json for the key.
                       </div>
                     </div>
 

@@ -57,10 +57,13 @@ export const RigProvider = ({ children, rigConfig }) => {
 
     const connectSSE = () => {
       // Construct URL from config or default
-      const rigUrl = buildRigUrl(rigConfig);
+      const rigUrlOrig = buildRigUrl(rigConfig);
 
-      // console.log('[RigContext] Connecting to SSE stream...', `${rigUrl}/stream`);
-      eventSource = new EventSource(`${rigUrl}/stream`);
+      const apiKeyParam = rigConfig?.apiKey ? `?apiKey=${encodeURIComponent(rigConfig.apiKey)}` : '';
+      const sseUrl = `${rigUrlOrig}/stream${apiKeyParam}`;
+
+      // console.log('[RigContext] Connecting to SSE stream...', sseUrl);
+      eventSource = new EventSource(sseUrl);
 
       eventSource.onopen = () => {
         // console.log('[RigContext] SSE Connected');
@@ -125,9 +128,12 @@ export const RigProvider = ({ children, rigConfig }) => {
     async (freq) => {
       if (!rigConfig?.enabled) return;
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (rigConfig.apiKey) headers['Authorization'] = `Bearer ${rigConfig.apiKey}`;
+
         await fetch(`${rigUrl}/freq`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ freq, tune: rigConfig.tuneEnabled }),
         });
         // No need to poll, SSE will push update
@@ -143,9 +149,12 @@ export const RigProvider = ({ children, rigConfig }) => {
     async (mode) => {
       if (!rigConfig?.enabled) return;
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (rigConfig.apiKey) headers['Authorization'] = `Bearer ${rigConfig.apiKey}`;
+
         await fetch(`${rigUrl}/mode`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ mode }),
         });
         // SSE will push update
@@ -164,9 +173,12 @@ export const RigProvider = ({ children, rigConfig }) => {
       setRigState((prev) => ({ ...prev, ptt: enabled }));
 
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (rigConfig.apiKey) headers['Authorization'] = `Bearer ${rigConfig.apiKey}`;
+
         await fetch(`${rigUrl}/ptt`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ ptt: enabled }),
         });
         // SSE will push update

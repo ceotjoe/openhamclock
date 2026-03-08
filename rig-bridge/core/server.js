@@ -1038,8 +1038,78 @@ function buildSetupHtml(version) {
 
 function createServer(registry, version) {
   const app = express();
-  app.use(cors());
+
+  // Custom CORS middleware that checks against config.allowedOrigins
+  app.use(
+    cors({
+      origin: function (origin, callback) {
+        if (!origin) return callback(null, true); // Allow non-browser agents
+
+        const host = config.serverHost || '127.0.0.1';
+        const port = config.port || 5555;
+
+        const allowed = [
+          `http://localhost:${port}`,
+          `http://${host}:${port}`,
+          `http://127.0.0.1:${port}`,
+          ...(config.allowedOrigins || []),
+        ];
+
+        if (allowed.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error(`CORS policy: Origin not allowed (${origin})`), false);
+      },
+    }),
+  );
   app.use(express.json());
+
+  // --- Authentication Middleware ---
+  const authMiddleware = (req, res, next) => {
+    // Check Basic Auth
+    const b64auth =
+      req.headers.authorization && req.headers.authorization.startsWith('Basic ')
+        ? req.headers.authorization.split(' ')[1]
+        : '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+    const isBasicAuthValid = login === 'admin' && password === config.apiKey;
+
+    // Basic Auth for Setup UI (username: admin, password: apiKey)
+    if (req.path === '/' || req.path.startsWith('/index.html')) {
+      if (isBasicAuthValid) {
+        return next();
+      }
+      res.set('WWW-Authenticate', 'Basic realm="Rig Bridge Setup UI"');
+      return res.status(401).send('Authentication required.');
+    }
+
+    // Token Auth for APIs and SSE
+    let token = '';
+
+    // Check Authorization header: Bearer <token>
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+
+    // Fallback to query param ?apiKey= for EventSource/SSE and simple GETs
+    if (!token && req.query.apiKey) {
+      token = req.query.apiKey;
+    }
+
+    // Allow Basic Auth to work for API routes requested from the Setup UI
+    if (!token && isBasicAuthValid) {
+      return next();
+    }
+
+    if (!token || token !== config.apiKey) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or missing API Key' });
+    }
+
+    next();
+  };
+
+  app.use(authMiddleware);
 
   // Allow plugins to register their own routes
   registry.registerRoutes(app);
@@ -1101,6 +1171,13 @@ function createServer(registry, version) {
     const newConfig = req.body;
     if (newConfig.port) config.port = newConfig.port;
     if (newConfig.radio) {
+      // Validate serial port path against directory traversal
+      if (
+        newConfig.radio.serialPort &&
+        (newConfig.radio.serialPort.includes('..') || newConfig.radio.serialPort.includes('~'))
+      ) {
+        return res.status(400).json({ error: 'Invalid serial port path' });
+      }
       config.radio = { ...config.radio, ...newConfig.radio };
     }
     if (typeof newConfig.logging === 'boolean') {
@@ -1235,13 +1312,14 @@ function createServer(registry, version) {
 
 function startServer(port, registry, version) {
   const app = createServer(registry, version);
-  const server = app.listen(port, '0.0.0.0', () => {
+  const host = config.serverHost || '127.0.0.1';
+  const server = app.listen(port, host, () => {
     const versionLabel = `v${version}`.padEnd(8);
     console.log('');
     console.log('  ╔══════════════════════════════════════════════╗');
     console.log(`  ║   📻  OpenHamClock Rig Bridge  ${versionLabel}      ║`);
     console.log('  ╠══════════════════════════════════════════════╣');
-    console.log(`  ║   Setup UI:  http://localhost:${port}          ║`);
+    console.log(`  ║   Setup UI:  http://${host}:${port}          ║`);
     console.log(`  ║   Radio:     ${(config.radio.type || 'none').padEnd(30)}║`);
     console.log('  ╚══════════════════════════════════════════════╝');
     console.log('');

@@ -46,13 +46,14 @@ Usage:
 
 Options:
   --port <number>    HTTP port for setup UI (default: 5555)
+  --host <string>    Host interface to bind to (default: 127.0.0.1)
   --debug            Enable verbose CAT protocol logging
   --version, -v      Print version and exit
   --help, -h         Show this help message
 
 Examples:
   node rig-bridge.js
-  node rig-bridge.js --port 8080 --debug
+  node rig-bridge.js --host 0.0.0.0 --port 8080
   `);
   process.exit(0);
 }
@@ -63,6 +64,10 @@ registry.registerBuiltins();
 
 // 5. Start HTTP server (passes registry for route dispatch and plugin route registration)
 startServer(config.port, registry, VERSION);
+
+console.log(`  [Security] Your API Key is: ${config.apiKey}`);
+console.log(`  [Security] You will need this key to connect OpenHamClock to this rig bridge.`);
+console.log(`  [Security] Setup UI Username is 'admin', Password is the API Key above.\n`);
 
 // 6. Auto-connect to configured radio (if any)
 registry.connectActive();
