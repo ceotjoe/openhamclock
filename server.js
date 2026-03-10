@@ -441,7 +441,11 @@ app.use(
       // Allow requests with no Origin header (curl, Postman, server-to-server, same-origin)
       if (!requestOrigin) return callback(null, true);
       if (allowedOrigins.has(requestOrigin)) return callback(null, true);
-      callback(new Error('CORS: origin not allowed'));
+      // Don't set CORS headers for unknown origins — the browser's same-origin policy
+      // will block cross-origin reads. Using callback(null, false) instead of throwing
+      // an Error avoids breaking same-origin static asset requests on Railway/staging
+      // where the deployment URL isn't in the allowlist.
+      callback(null, false);
     },
     methods: ['GET', 'POST'],
     maxAge: 86400,
