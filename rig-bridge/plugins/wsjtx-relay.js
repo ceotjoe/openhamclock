@@ -492,7 +492,13 @@ const descriptor = {
         }, 60000);
       });
 
-      socket.bind(udpPort, '0.0.0.0');
+      // SECURITY: Bind to localhost by default to prevent external UDP packet injection.
+      // Multicast requires joining a group on a real (non-loopback) interface, so fall
+      // back to '0.0.0.0' automatically when multicast is enabled. For the rare case
+      // where multicast is disabled but WSJT-X runs on a different machine, set
+      // wsjtxRelay.udpBindAddress to "0.0.0.0" in rig-bridge-config.json.
+      const bindAddr = cfg.multicast ? '0.0.0.0' : cfg.udpBindAddress || '127.0.0.1';
+      socket.bind(udpPort, bindAddr);
     }
 
     function disconnect() {

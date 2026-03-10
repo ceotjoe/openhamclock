@@ -54,6 +54,8 @@ Enable by setting `radio.type = "mock"` in `rig-bridge-config.json` or selecting
 3. Open **http://localhost:5555** in your browser
 4. Select your radio type and COM port
 5. Click **Save & Connect**
+6. Copy the **API Token** from the Security card on the same page
+7. In OpenHamClock → **Settings → Rig Control → API Token**, paste the token
 
 ### Option B: Run with Node.js
 
@@ -168,18 +170,19 @@ Edit `rig-bridge-config.json`:
 }
 ```
 
-| Field                | Description                                             | Default                    |
-| -------------------- | ------------------------------------------------------- | -------------------------- |
-| `enabled`            | Activate the relay on startup                           | `false`                    |
-| `url`                | OpenHamClock server URL                                 | `https://openhamclock.com` |
-| `key`                | Relay authentication key (from your OHC account)        | —                          |
-| `session`            | Browser session ID for per-user isolation               | —                          |
-| `udpPort`            | UDP port WSJT-X is sending to                           | `2237`                     |
-| `batchInterval`      | How often decoded messages are sent (ms)                | `2000`                     |
-| `verbose`            | Log every decoded message to the console                | `false`                    |
-| `multicast`          | Join a UDP multicast group to receive WSJT-X packets    | `false`                    |
-| `multicastGroup`     | Multicast group IP address to join                      | `224.0.0.1`                |
-| `multicastInterface` | Local NIC IP for multi-homed systems; `""` = OS default | `""`                       |
+| Field                | Description                                                                                              | Default                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `enabled`            | Activate the relay on startup                                                                            | `false`                    |
+| `url`                | OpenHamClock server URL                                                                                  | `https://openhamclock.com` |
+| `key`                | Relay authentication key (from your OHC account)                                                         | —                          |
+| `session`            | Browser session ID for per-user isolation                                                                | —                          |
+| `udpPort`            | UDP port WSJT-X is sending to                                                                            | `2237`                     |
+| `batchInterval`      | How often decoded messages are sent (ms)                                                                 | `2000`                     |
+| `verbose`            | Log every decoded message to the console                                                                 | `false`                    |
+| `multicast`          | Join a UDP multicast group to receive WSJT-X packets                                                     | `false`                    |
+| `multicastGroup`     | Multicast group IP address to join                                                                       | `224.0.0.1`                |
+| `multicastInterface` | Local NIC IP for multi-homed systems; `""` = OS default                                                  | `""`                       |
+| `udpBindAddress`     | UDP bind address. Set to `"0.0.0.0"` if WSJT-X runs on a different machine (unicast, non-multicast only) | `""` (→ `127.0.0.1`)       |
 
 ### In WSJT-X
 
@@ -221,7 +224,8 @@ Once the bridge is running and showing your frequency:
 2. Scroll to **Rig Control**
 3. Check **Enable Rig Control**
 4. Set Host URL: `http://localhost:5555`
-5. Click any DX spot, POTA, or SOTA to tune your radio!
+5. Paste the **API Token** shown in the **Security** card at `http://localhost:5555` into the **API Token** field
+6. Click any DX spot, POTA, or SOTA to tune your radio!
 
 ---
 
@@ -245,19 +249,20 @@ Executables are output to the `dist/` folder.
 
 ## Troubleshooting
 
-| Problem                   | Solution                                                                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No COM ports found        | Install USB driver (Silicon Labs CP210x for Yaesu, FTDI for some Kenwood)                                                                                   |
-| Port opens but no data    | Check baud rate matches radio's CAT Rate setting                                                                                                            |
-| Icom not responding       | Verify CI-V address matches your radio model                                                                                                                |
-| CORS errors in browser    | The bridge allows all origins by default                                                                                                                    |
-| Port already in use       | Close flrig/rigctld if running — you don't need them anymore                                                                                                |
-| PTT not responsive        | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)                                                                                          |
-| macOS Comms Failure       | The bridge automatically applies a `stty` fix for CP210x drivers.                                                                                           |
-| TCI: Connection refused   | Enable TCI in your SDR app (Thetis → Setup → CAT Control → Enable TCI Server)                                                                               |
-| TCI: No frequency updates | Check `trx` / `vfo` index in config match the active transceiver in your SDR app                                                                            |
-| TCI: Remote SDR           | Set `tci.host` to the IP of the machine running the SDR application                                                                                         |
-| Multicast: no packets     | Verify `multicastGroup` matches what WSJT-X sends to; check OS firewall allows multicast UDP; set `multicastInterface` to the correct NIC IP if multi-homed |
+| Problem                              | Solution                                                                                                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No COM ports found                   | Install USB driver (Silicon Labs CP210x for Yaesu, FTDI for some Kenwood)                                                                                   |
+| Port opens but no data               | Check baud rate matches radio's CAT Rate setting                                                                                                            |
+| Icom not responding                  | Verify CI-V address matches your radio model                                                                                                                |
+| 401 Unauthorized errors              | Copy the API Token from http://localhost:5555 (Security card) and paste into OHC → Settings → Rig Control → API Token                                       |
+| WSJT-X relay not receiving (unicast) | WSJT-X must run on the same machine. In WSJT-X set UDP Server to `127.0.0.1`. For remote WSJT-X, enable multicast instead                                   |
+| Port already in use                  | Close flrig/rigctld if running — you don't need them anymore                                                                                                |
+| PTT not responsive                   | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)                                                                                          |
+| macOS Comms Failure                  | The bridge automatically applies a `stty` fix for CP210x drivers.                                                                                           |
+| TCI: Connection refused              | Enable TCI in your SDR app (Thetis → Setup → CAT Control → Enable TCI Server)                                                                               |
+| TCI: No frequency updates            | Check `trx` / `vfo` index in config match the active transceiver in your SDR app                                                                            |
+| TCI: Remote SDR                      | Set `tci.host` to the IP of the machine running the SDR application                                                                                         |
+| Multicast: no packets                | Verify `multicastGroup` matches what WSJT-X sends to; check OS firewall allows multicast UDP; set `multicastInterface` to the correct NIC IP if multi-homed |
 
 ---
 
@@ -265,17 +270,32 @@ Executables are output to the `dist/` folder.
 
 Fully backward compatible with the original rig-daemon API:
 
-| Method | Endpoint      | Description                               |
-| ------ | ------------- | ----------------------------------------- |
-| GET    | `/status`     | Current freq, mode, PTT, connected status |
-| GET    | `/stream`     | SSE stream of real-time updates           |
-| POST   | `/freq`       | Set frequency: `{ "freq": 14074000 }`     |
-| POST   | `/mode`       | Set mode: `{ "mode": "USB" }`             |
-| POST   | `/ptt`        | Set PTT: `{ "ptt": true }`                |
-| GET    | `/api/ports`  | List available serial ports               |
-| GET    | `/api/config` | Get current configuration                 |
-| POST   | `/api/config` | Update configuration & reconnect          |
-| POST   | `/api/test`   | Test a serial port connection             |
+| Method | Endpoint                | Auth | Description                               |
+| ------ | ----------------------- | ---- | ----------------------------------------- |
+| GET    | `/status`               |      | Current freq, mode, PTT, connected status |
+| GET    | `/stream`               |      | SSE stream of real-time updates           |
+| POST   | `/freq`                 | 🔐   | Set frequency: `{ "freq": 14074000 }`     |
+| POST   | `/mode`                 | 🔐   | Set mode: `{ "mode": "USB" }`             |
+| POST   | `/ptt`                  | 🔐   | Set PTT: `{ "ptt": true }`                |
+| GET    | `/api/ports`            |      | List available serial ports               |
+| GET    | `/api/config`           |      | Get current configuration                 |
+| POST   | `/api/config`           | 🔐   | Update configuration & reconnect          |
+| POST   | `/api/test`             | 🔐   | Test a serial port connection             |
+| GET    | `/api/token`            |      | Returns `{ tokenSet: true/false }`        |
+| POST   | `/api/token/regenerate` | 🔐   | Generate a new API token                  |
+
+**🔐 Authentication:** Protected endpoints require the `X-RigBridge-Token: <token>` header.
+Find your token at `http://localhost:5555` (Security card). Auth is only enforced when a token is set in config (see Security section below).
+
+## Security
+
+rig-bridge is designed to run locally and defaults to a secure configuration:
+
+- **Localhost-only binding** — the HTTP server binds to `127.0.0.1` by default. Set `bindAddress: "0.0.0.0"` in `rig-bridge-config.json` only if you need LAN access (e.g. bridge on a Pi, browser on a desktop).
+- **Restricted CORS** — only `openhamclock.com` and `localhost` origins are allowed.
+- **API Token** — write endpoints (`/ptt`, `/freq`, `/mode`, `/api/config`) require an `X-RigBridge-Token` header. A token is auto-generated on first run and shown at `http://localhost:5555`.
+- **Input validation** — serial port paths and plugin host values are validated before use.
+- **WSJT-X UDP** — the UDP listener binds to `127.0.0.1` by default (loopback-only). Set `wsjtxRelay.udpBindAddress: "0.0.0.0"` if WSJT-X runs on a separate machine and multicast is not an option.
 
 ---
 

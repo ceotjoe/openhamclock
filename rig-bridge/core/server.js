@@ -514,7 +514,37 @@ function buildSetupHtml(version) {
         1. Open <strong>Settings</strong> → <strong>Station Settings</strong> → <strong>Rig Control</strong><br>
         2. Check <strong>Enable Rig Control</strong><br>
         3. Set Host URL to: <code>http://localhost:5555</code><br>
-        4. Click any DX spot, POTA, or SOTA to tune your radio! 🎉
+        4. Paste the <strong>API Token</strong> shown below into the <strong>API Token</strong> field<br>
+        5. Click any DX spot, POTA, or SOTA to tune your radio! 🎉
+      </div>
+
+      <!-- Security Card -->
+      <div id="security-card" style="margin-top:12px; background:var(--card-bg,#1a1a2e); border:1px solid var(--border,#333); border-radius:8px; padding:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <strong style="font-size:13px;">🔐 API Security Token</strong>
+          <span id="auth-badge" style="font-size:11px; padding:2px 8px; border-radius:10px; background:#22c55e22; color:#22c55e; border:1px solid #22c55e44;">Auth enabled</span>
+        </div>
+        <div style="font-size:12px; color:#aaa; margin-bottom:10px; line-height:1.5;">
+          Write endpoints (PTT, frequency, config) require this token. Copy it and paste it into
+          <strong>OpenHamClock → Settings → Rig Control → API Token</strong>. You only need to do this once.
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input id="token-display" type="text" readonly
+            style="flex:1; font-family:monospace; font-size:12px; padding:6px 10px;
+                   background:#0d0d1a; border:1px solid #333; border-radius:4px; color:#e0e0e0;"
+            value="Loading…">
+          <button onclick="copyToken()"
+            style="padding:6px 14px; font-size:12px; background:#6366f1; color:#fff;
+                   border:none; border-radius:4px; cursor:pointer; white-space:nowrap;">
+            📋 Copy
+          </button>
+          <button onclick="regenerateToken()"
+            style="padding:6px 14px; font-size:12px; background:#374151; color:#ddd;
+                   border:1px solid #4b5563; border-radius:4px; cursor:pointer; white-space:nowrap;"
+            title="Generate a new token (you will need to update OpenHamClock settings)">
+            🔄 Regenerate
+          </button>
+        </div>
       </div>
     </div>
 
@@ -730,8 +760,56 @@ function buildSetupHtml(version) {
         startStatusPoll();
         startLogStream();
         startWsjtxStatusPoll();
+        loadTokenDisplay();
       } catch (e) {
         showToast('Failed to load config', 'error');
+      }
+    }
+
+    // ── Security token UI ─────────────────────────────────────────────────
+    async function loadTokenDisplay() {
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) return;
+        const cfg = await res.json();
+        const input = document.getElementById('token-display');
+        const badge = document.getElementById('auth-badge');
+        if (!input) return;
+        if (cfg.apiToken) {
+          input.value = cfg.apiToken;
+          if (badge) { badge.textContent = 'Auth enabled'; badge.style.color = '#22c55e'; }
+        } else {
+          input.value = '(no token — auth disabled)';
+          if (badge) { badge.textContent = 'Auth disabled'; badge.style.color = '#f59e0b'; badge.style.background = '#f59e0b22'; badge.style.borderColor = '#f59e0b44'; }
+        }
+      } catch (e) {}
+    }
+
+    async function copyToken() {
+      const val = document.getElementById('token-display')?.value;
+      if (!val || val.startsWith('(')) return;
+      try {
+        await navigator.clipboard.writeText(val);
+        showToast('Token copied to clipboard!', 'success');
+      } catch (e) {
+        showToast('Copy failed — select and copy manually', 'error');
+      }
+    }
+
+    async function regenerateToken() {
+      if (!confirm('Regenerate API token? You will need to update the token in OpenHamClock settings.')) return;
+      try {
+        const cfg = await (await fetch('/api/config')).json();
+        const res = await fetch('/api/token/regenerate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': cfg.apiToken || '' },
+        });
+        if (!res.ok) { showToast('Regenerate failed — auth error', 'error'); return; }
+        const data = await res.json();
+        document.getElementById('token-display').value = data.apiToken;
+        showToast('New token generated — update OpenHamClock settings', 'success');
+      } catch (e) {
+        showToast('Regenerate failed: ' + e.message, 'error');
       }
     }
 
@@ -1105,6 +1183,16 @@ function createServer(registry, version) {
   );
   app.use(express.json());
 
+  // SECURITY: Token-based authentication for write (state-changing) endpoints.
+  // Enforced only when config.apiToken is non-empty, so existing installs with
+  // no token in their config file continue to work unchanged (soft rollout).
+  const requireAuth = (req, res, next) => {
+    if (!config.apiToken) return next(); // auth disabled — backwards-compatible
+    const provided = req.headers['x-rigbridge-token'];
+    if (provided && provided === config.apiToken) return next();
+    res.status(401).json({ error: 'Unauthorized — provide the correct X-RigBridge-Token header' });
+  };
+
   // Allow plugins to register their own routes
   registry.registerRoutes(app);
 
@@ -1117,12 +1205,14 @@ function createServer(registry, version) {
   });
 
   // ─── API: Live console log stream (SSE) ───
+  // SECURITY: Do NOT set Access-Control-Allow-Origin manually here — the CORS
+  // middleware above handles origin filtering for all routes. A manual wildcard
+  // header here would bypass that and expose the log stream to any origin.
   app.get('/api/log/stream', (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
     });
 
     // Send buffered history so a freshly opened tab sees recent output
@@ -1141,7 +1231,7 @@ function createServer(registry, version) {
     res.json({ logging: config.logging });
   });
 
-  app.post('/api/logging', (req, res) => {
+  app.post('/api/logging', requireAuth, (req, res) => {
     const { logging } = req.body;
     if (typeof logging !== 'boolean') return res.status(400).json({ error: 'logging must be a boolean' });
     config.logging = logging;
@@ -1170,17 +1260,57 @@ function createServer(registry, version) {
     return false;
   };
 
+  // SECURITY: Validate plugin host values (flrig, rigctld, tci) to prevent
+  // SSRF via the config API. Private IP ranges are deliberately allowed since
+  // these backends legitimately run on a Pi or another machine on the same LAN.
+  // What we reject is URL-scheme injection ("http://...") and path traversal.
+  const isValidRemoteHost = (h) => {
+    if (!h || typeof h !== 'string') return false;
+    // Reject anything that looks like a URL (scheme present)
+    if (/[/:]{2}/.test(h)) return false;
+    // Reject path separators
+    if (/[/\\]/.test(h)) return false;
+    // Allow: localhost, IPv4, bracketed IPv6, plain hostnames/FQDNs
+    if (/^localhost$/i.test(h)) return true;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
+    if (/^\[[\da-fA-F:]+\]$/.test(h)) return true;
+    if (/^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(h))
+      return true;
+    return false;
+  };
+
   app.get('/api/config', (req, res) => {
     res.json(config);
   });
 
-  app.post('/api/config', (req, res) => {
+  // ─── API: Token management ───
+  // Returns only whether a token is set (not the token value itself) for UI badge.
+  app.get('/api/token', (req, res) => {
+    res.json({ tokenSet: !!config.apiToken });
+  });
+
+  // Regenerate token — requires the current token to prevent CSRF.
+  app.post('/api/token/regenerate', requireAuth, (req, res) => {
+    config.apiToken = require('crypto').randomBytes(16).toString('hex');
+    saveConfig();
+    console.log('[Server] API token regenerated');
+    res.json({ success: true, apiToken: config.apiToken });
+  });
+
+  app.post('/api/config', requireAuth, (req, res) => {
     const newConfig = req.body;
     if (newConfig.port) config.port = newConfig.port;
     if (newConfig.radio) {
       // Validate serial port path if provided
       if (newConfig.radio.serialPort && !isValidSerialPort(newConfig.radio.serialPort)) {
         return res.status(400).json({ success: false, error: 'Invalid serial port path' });
+      }
+      // SECURITY: Validate plugin host fields to prevent SSRF
+      if (newConfig.radio.flrigHost !== undefined && !isValidRemoteHost(newConfig.radio.flrigHost)) {
+        return res.status(400).json({ success: false, error: 'Invalid flrig host' });
+      }
+      if (newConfig.radio.rigctldHost !== undefined && !isValidRemoteHost(newConfig.radio.rigctldHost)) {
+        return res.status(400).json({ success: false, error: 'Invalid rigctld host' });
       }
       config.radio = { ...config.radio, ...newConfig.radio };
     }
@@ -1191,6 +1321,10 @@ function createServer(registry, version) {
       config.wsjtxRelay = { ...config.wsjtxRelay, ...newConfig.wsjtxRelay };
     }
     if (newConfig.tci) {
+      // SECURITY: Validate TCI host to prevent SSRF
+      if (newConfig.tci.host !== undefined && !isValidRemoteHost(newConfig.tci.host)) {
+        return res.status(400).json({ success: false, error: 'Invalid TCI host' });
+      }
       config.tci = { ...config.tci, ...newConfig.tci };
     }
     // macOS: tty.* (dial-in) blocks open() — silently upgrade to cu.* (call-out)
@@ -1213,7 +1347,7 @@ function createServer(registry, version) {
   });
 
   // ─── API: Test serial port connection ───
-  app.post('/api/test', async (req, res) => {
+  app.post('/api/test', requireAuth, async (req, res) => {
     const testPort = req.body.serialPort || config.radio.serialPort;
     if (!isValidSerialPort(testPort)) {
       return res.json({ success: false, error: 'Invalid serial port path' });
@@ -1291,21 +1425,21 @@ function createServer(registry, version) {
     });
   });
 
-  app.post('/freq', (req, res) => {
+  app.post('/freq', requireAuth, (req, res) => {
     const { freq } = req.body;
     if (!freq) return res.status(400).json({ error: 'Missing freq' });
     registry.dispatch('setFreq', freq);
     res.json({ success: true });
   });
 
-  app.post('/mode', (req, res) => {
+  app.post('/mode', requireAuth, (req, res) => {
     const { mode } = req.body;
     if (!mode) return res.status(400).json({ error: 'Missing mode' });
     registry.dispatch('setMode', mode);
     res.json({ success: true });
   });
 
-  app.post('/ptt', (req, res) => {
+  app.post('/ptt', requireAuth, (req, res) => {
     const { ptt } = req.body;
     if (ptt && !config.radio.pttEnabled) {
       return res.status(403).json({ error: 'PTT disabled in configuration' });

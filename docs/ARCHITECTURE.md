@@ -74,7 +74,7 @@ openhamclock-main/
 │   │       └── useVersionCheck.js  # Version check + update toast
 │   │
 │   ├── contexts/           # React contexts
-│   │   └── RigContext.jsx      # Rig control state + tuneTo()
+│   │   └── RigContext.jsx      # Rig control state + tuneTo() + auth token forwarding
 │   │
 │   ├── layouts/            # Page layouts
 │   │   ├── ModernLayout.jsx    # Default responsive grid
@@ -141,6 +141,16 @@ openhamclock-main/
 ├── SECURITY.md             # Security policy
 └── LICENSE                 # License
 ```
+
+## rig-bridge Security Model
+
+`rig-bridge` is a local HTTP daemon that connects OpenHamClock to ham radio hardware. It runs on the user's machine and communicates with the OpenHamClock frontend. Its security model:
+
+- **Localhost-only binding** — the server defaults to `127.0.0.1:5555`, not `0.0.0.0`. LAN access is an explicit opt-in (`bindAddress` config).
+- **Origin-restricted CORS** — only `openhamclock.com`, `localhost`, and user-configured origins are allowed. The wildcard (`*`) is never used.
+- **API Token auth** — write endpoints (`POST /freq`, `/mode`, `/ptt`, `/api/config`, etc.) require an `X-RigBridge-Token` header. The token is auto-generated on first run and displayed in the local setup UI at `http://localhost:5555`. It is stored in `config.rigControl.apiToken` on the OHC side and forwarded by `RigContext.jsx`.
+- **Input validation** — serial port paths are regex-validated; plugin host values (flrig, rigctld, tci) are validated to prevent URL-scheme injection and path traversal.
+- **UDP scope** — the WSJT-X relay UDP socket binds to `127.0.0.1` by default; automatically widens to `0.0.0.0` when multicast is enabled.
 
 ## Key Patterns
 

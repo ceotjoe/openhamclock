@@ -407,5 +407,9 @@
   "app.mapControls.unlock": "Разблокировать",
   "app.mapControls.calls.hide": "Скрыть позывные",
   "app.mapControls.calls.show": "Показать позывные",
-  "app.legend.moon": "Луна"
+  "app.legend.moon": "Луна",
+  "station.settings.rigControl.apiToken": "API Token",
+  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
+  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
 }

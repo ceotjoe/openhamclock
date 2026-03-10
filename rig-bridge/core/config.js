@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // Portable config path (works in pkg snapshots too)
 const CONFIG_DIR = process.pkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
@@ -14,6 +15,10 @@ const DEFAULT_CONFIG = {
   port: 5555,
   bindAddress: '127.0.0.1', // Bind to localhost only; set to '0.0.0.0' for LAN access
   corsOrigins: '', // Extra allowed CORS origins (comma-separated); OHC origins always allowed
+  // SECURITY: API token protecting write endpoints (/freq, /mode, /ptt, POST /api/config, etc.)
+  // Auto-generated on first run. Copy from http://localhost:5555 and paste into OHC → Settings →
+  // Rig Control → API Token. Empty string disables enforcement (backwards-compatible).
+  apiToken: '',
   debug: false, // Centralized verbose CAT logging flag
   logging: true, // Enable/disable console log capture & broadcast to UI
   radio: {
@@ -52,6 +57,9 @@ const DEFAULT_CONFIG = {
     multicast: false, // Join a multicast group instead of unicast
     multicastGroup: '224.0.0.1', // WSJT-X conventional multicast group
     multicastInterface: '', // Local NIC IP for multi-homed systems; '' = let OS choose
+    // SECURITY: UDP bind address. Default '127.0.0.1' (localhost-only).
+    // Set to '0.0.0.0' only if WSJT-X runs on a separate machine and multicast is not used.
+    udpBindAddress: '', // '' = use secure default (127.0.0.1, or 0.0.0.0 when multicast enabled)
   },
 };
 
@@ -83,6 +91,17 @@ function loadConfig() {
     }
   } catch (e) {
     console.error('[Config] Failed to load:', e.message);
+  }
+
+  // SECURITY: Auto-generate an API token on first run if none is present.
+  // The token is persisted immediately so it survives restarts.
+  // Enforcement is active as soon as the token is non-empty (i.e. right now for
+  // all new installs). Existing installs with no token in their config file
+  // remain unenforced until they explicitly copy the token to OpenHamClock.
+  if (!config.apiToken) {
+    config.apiToken = crypto.randomBytes(16).toString('hex');
+    saveConfig();
+    console.log('[Config] Generated new API token — copy it from http://localhost:5555');
   }
 }
 

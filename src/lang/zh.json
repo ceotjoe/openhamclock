@@ -390,5 +390,8 @@
   "app.mapControls.calls.hide": "隐藏呼号",
   "app.mapControls.calls.show": "显示呼号",
   "app.legend.moon": "月亮",
-  "propagation.heatmap.tooltip.stoplight": "切换至红绿灯颜色 (绿色=优良)"
+  "station.settings.rigControl.apiToken": "API Token",
+  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
+  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
 }

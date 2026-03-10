@@ -417,5 +417,9 @@
   "weather.wind.SW": "남서",
   "weather.wind.W": "서",
   "weather.wind.WNW": "서북서",
-  "weather.wind.WSW": "서남서"
+  "weather.wind.WSW": "서남서",
+  "station.settings.rigControl.apiToken": "API Token",
+  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
+  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
 }
