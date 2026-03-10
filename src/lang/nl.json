@@ -418,8 +418,8 @@
   "weather.wind.W": "W",
   "weather.wind.WNW": "WNW",
   "weather.wind.WSW": "WZW",
-  "station.settings.rigControl.apiToken": "API Token",
-  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
-  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
-  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
+  "station.settings.rigControl.apiToken": "API-token",
+  "station.settings.rigControl.apiToken.hint": "Kopieer van de rig-bridge instellingspagina (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Token hier plakken",
+  "app.rigControl.error.unauthorized": "Authenticatie mislukt — controleer het API-token in de rig-bedieningsinstellingen"
 }

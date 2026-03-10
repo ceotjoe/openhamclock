@@ -418,8 +418,8 @@
   "weather.wind.W": "B",
   "weather.wind.WNW": "BUB",
   "weather.wind.WSW": "BSB",
-  "station.settings.rigControl.apiToken": "API Token",
-  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
-  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
-  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
+  "station.settings.rigControl.apiToken": "Token API",
+  "station.settings.rigControl.apiToken.hint": "Salin dari halaman persediaan rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Tampal token di sini",
+  "app.rigControl.error.unauthorized": "Pengesahan gagal — semak Token API dalam tetapan kawalan rig"
 }

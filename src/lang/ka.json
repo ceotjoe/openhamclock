@@ -408,8 +408,8 @@
   "app.mapControls.calls.hide": "Hide Calls",
   "app.mapControls.calls.show": "Show Calls",
   "app.legend.moon": "მთვარე",
-  "station.settings.rigControl.apiToken": "API Token",
-  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
-  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
-  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
+  "station.settings.rigControl.apiToken": "API ტოკენი",
+  "station.settings.rigControl.apiToken.hint": "დააკოპირეთ rig-bridge-ის კონფიგურაციის გვერდიდან (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "ჩასვით ტოკენი აქ",
+  "app.rigControl.error.unauthorized": "ავტორიზაცია ვერ მოხდა — შეამოწმეთ API ტოკენი ანტენის კონტროლის პარამეტრებში"
 }

@@ -418,8 +418,8 @@
   "weather.wind.W": "Z",
   "weather.wind.WNW": "ZSZ",
   "weather.wind.WSW": "ZJZ",
-  "station.settings.rigControl.apiToken": "API Token",
-  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
-  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
-  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
+  "station.settings.rigControl.apiToken": "API žeton",
+  "station.settings.rigControl.apiToken.hint": "Kopiraj s strani za nastavitev rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Prilepi žeton sem",
+  "app.rigControl.error.unauthorized": "Avtentikacija ni uspela — preverite API žeton v nastavitvah nadzora radijske postaje"
 }

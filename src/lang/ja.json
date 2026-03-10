@@ -418,8 +418,8 @@
   "weather.wind.W": "西",
   "weather.wind.WNW": "西北西",
   "weather.wind.WSW": "西南西",
-  "station.settings.rigControl.apiToken": "API Token",
-  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
-  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
-  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
+  "station.settings.rigControl.apiToken": "APIトークン",
+  "station.settings.rigControl.apiToken.hint": "rig-bridge設定ページからコピー (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "トークンをここに貼り付け",
+  "app.rigControl.error.unauthorized": "認証失敗 — リグコントロール設定のAPIトークンを確認してください"
 }

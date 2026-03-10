@@ -383,8 +383,8 @@
   "weather.wind.W": "O",
   "weather.wind.WNW": "ONO",
   "weather.wind.WSW": "OSO",
-  "station.settings.rigControl.apiToken": "API Token",
-  "station.settings.rigControl.apiToken.hint": "Copy from the rig-bridge setup page (http://localhost:5555)",
-  "station.settings.rigControl.apiToken.placeholder": "Paste token here",
-  "app.rigControl.error.unauthorized": "Auth failed — check API Token in Rig Control settings"
+  "station.settings.rigControl.apiToken": "Token API",
+  "station.settings.rigControl.apiToken.hint": "Copia de la pàgina de configuració de rig-bridge (http://localhost:5555)",
+  "station.settings.rigControl.apiToken.placeholder": "Enganxa el token aquí",
+  "app.rigControl.error.unauthorized": "Error d'autenticació — comproveu el Token API a la configuració del control de l'equip"
 }
