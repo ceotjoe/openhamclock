@@ -159,6 +159,9 @@
   let apiKey = localStorage.getItem(STORAGE_API_KEY) || '';
   let lastUpdateTs = parseInt(localStorage.getItem('ohc_aprs_last_update')) || 0;
 
+  // Escape HTML to prevent XSS when interpolating into innerHTML
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
   function getCallsign() {
     try {
       const config = JSON.parse(localStorage.getItem('openhamclock_config'));
@@ -386,7 +389,7 @@
                 <div style="padding: 20px; text-align: center; color: var(--text-muted);">${t('setup_required')}</div>
             </div>
             <div id="aprs-news-settings">
-                <input type="password" id="aprs-apikey-input" class="aprs-input" placeholder="${t('placeholder_apikey')}" value="${apiKey}">
+                <input type="password" id="aprs-apikey-input" class="aprs-input" placeholder="${t('placeholder_apikey')}" value="${esc(apiKey)}">
                 <div style="display:flex; justify-content: space-between; align-items: center;">
                     <span id="aprs-status" style="color: var(--text-muted); font-size: 9px;"></span>
                     <button id="aprs-save-btn" style="padding: 4px 8px; cursor: pointer; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">${t('save')}</button>
@@ -552,7 +555,7 @@
       }
     } else {
       document.getElementById('aprs-news-content').innerHTML =
-        `<div style="padding: 20px; text-align: center; color: var(--accent-red);">${t('error_api')}: ${data.description || ''}</div>`;
+        `<div style="padding: 20px; text-align: center; color: var(--accent-red);">${t('error_api')}: ${esc(data.description || '')}</div>`;
       status.innerText = 'Error';
     }
   }
@@ -580,12 +583,12 @@
         return `
                 <div class="aprs-msg-entry">
                     <div class="aprs-msg-meta">
-                        <span><span class="aprs-msg-call">${entry.srccall}</span>${tag}</span>
+                        <span><span class="aprs-msg-call">${esc(entry.srccall)}</span>${tag}</span>
                         <span>${timeStr}</span>
                     </div>
-                    <div class="aprs-msg-text">${entry.message}</div>
+                    <div class="aprs-msg-text">${esc(entry.message)}</div>
                     <div style="font-size: 9px; color: var(--text-muted); text-align: right; margin-top: 2px;">
-                        ${t('to')}: <span style="color: ${isToSSID ? 'var(--accent-amber)' : 'var(--text-secondary)'}">${entry.dst}</span>
+                        ${t('to')}: <span style="color: ${isToSSID ? 'var(--accent-amber)' : 'var(--text-secondary)'}">${esc(entry.dst)}</span>
                     </div>
                 </div>
             `;

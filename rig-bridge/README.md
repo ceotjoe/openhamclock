@@ -18,12 +18,30 @@ Built on a **plugin architecture** — each radio integration is a standalone mo
 
 Also works with **Elecraft** radios (K3, K4, KX3, KX2) using the Kenwood plugin.
 
+### SDR Radios via TCI (WebSocket)
+
+TCI (Transceiver Control Interface) is a WebSocket-based protocol used by modern SDR applications. Unlike serial CAT, TCI **pushes** frequency, mode, and PTT changes in real-time — no polling, no serial port conflicts.
+
+| Application   | Radios                | Default TCI Port |
+| ------------- | --------------------- | ---------------- |
+| **Thetis**    | Hermes Lite 2, ANAN   | 40001            |
+| **ExpertSDR** | SunSDR2               | 40001            |
+| **SmartSDR**  | Flex (via TCI bridge) | varies           |
+
 ### Via Control Software (Legacy)
 
 | Software    | Protocol | Default Port |
 | ----------- | -------- | ------------ |
 | **flrig**   | XML-RPC  | 12345        |
 | **rigctld** | TCP      | 4532         |
+
+### For Testing (No Hardware Required)
+
+| Type                | Description                                                          |
+| ------------------- | -------------------------------------------------------------------- |
+| **Simulated Radio** | Fake radio that drifts through several bands — no serial port needed |
+
+Enable by setting `radio.type = "mock"` in `rig-bridge-config.json` or selecting **Simulated Radio** in the setup UI.
 
 ---
 
@@ -75,6 +93,124 @@ node rig-bridge.js --debug       # Enable raw hex/ASCII CAT traffic logging
 1. Connect USB cable from radio to computer
 2. In Rig Bridge: Select **Kenwood**, pick COM port, baud **9600**, stop bits **1**
 
+### SDR Radios via TCI
+
+#### 1. Enable TCI in your SDR application
+
+**Thetis (HL2 / ANAN):** Setup → CAT Control → check **Enable TCI Server** (default port 40001)
+
+**ExpertSDR:** Settings → TCI → Enable (default port 40001)
+
+#### 2. Configure rig-bridge
+
+Edit `rig-bridge-config.json`:
+
+```json
+{
+  "radio": { "type": "tci" },
+  "tci": {
+    "host": "localhost",
+    "port": 40001,
+    "trx": 0,
+    "vfo": 0
+  }
+}
+```
+
+| Field  | Description                      | Default     |
+| ------ | -------------------------------- | ----------- |
+| `host` | Host running the SDR application | `localhost` |
+| `port` | TCI WebSocket port               | `40001`     |
+| `trx`  | Transceiver index (0 = primary)  | `0`         |
+| `vfo`  | VFO index (0 = VFO-A, 1 = VFO-B) | `0`         |
+
+#### 3. Run rig-bridge
+
+```bash
+node rig-bridge.js
+```
+
+You should see:
+
+```
+[TCI] Connecting to ws://localhost:40001...
+[TCI] ✅ Connected to ws://localhost:40001
+[TCI] Device: Thetis
+[TCI] Server ready
+```
+
+The bridge auto-reconnects every 5 s if the connection drops — just restart your SDR app and it will reconnect automatically.
+
+---
+
+## WSJT-X Relay
+
+The WSJT-X Relay is an **integration plugin** (not a radio plugin) that listens for WSJT-X UDP packets on the local machine and forwards decoded messages to an OpenHamClock server in real-time. This lets OpenHamClock display your FT8/FT4 decodes as DX spots without any manual intervention.
+
+### Setup
+
+Edit `rig-bridge-config.json`:
+
+```json
+{
+  "wsjtxRelay": {
+    "enabled": true,
+    "url": "https://openhamclock.com",
+    "key": "your-relay-key",
+    "session": "your-session-id",
+    "udpPort": 2237,
+    "batchInterval": 2000,
+    "verbose": false,
+    "multicast": false,
+    "multicastGroup": "224.0.0.1",
+    "multicastInterface": ""
+  }
+}
+```
+
+| Field                | Description                                             | Default                    |
+| -------------------- | ------------------------------------------------------- | -------------------------- |
+| `enabled`            | Activate the relay on startup                           | `false`                    |
+| `url`                | OpenHamClock server URL                                 | `https://openhamclock.com` |
+| `key`                | Relay authentication key (from your OHC account)        | —                          |
+| `session`            | Browser session ID for per-user isolation               | —                          |
+| `udpPort`            | UDP port WSJT-X is sending to                           | `2237`                     |
+| `batchInterval`      | How often decoded messages are sent (ms)                | `2000`                     |
+| `verbose`            | Log every decoded message to the console                | `false`                    |
+| `multicast`          | Join a UDP multicast group to receive WSJT-X packets    | `false`                    |
+| `multicastGroup`     | Multicast group IP address to join                      | `224.0.0.1`                |
+| `multicastInterface` | Local NIC IP for multi-homed systems; `""` = OS default | `""`                       |
+
+### In WSJT-X
+
+Make sure WSJT-X is configured to send UDP packets to `localhost` on the same port as `udpPort` (default `2237`):
+**File → Settings → Reporting → UDP Server → `127.0.0.1:2237`**
+
+The relay runs alongside your radio plugin — you can use direct USB or TCI at the same time.
+
+### Multicast Mode
+
+By default the relay uses **unicast** — WSJT-X sends packets directly to `127.0.0.1` and only this process receives them.
+
+If you want multiple applications on the same machine or LAN to receive WSJT-X packets simultaneously, enable multicast:
+
+1. In WSJT-X: **File → Settings → Reporting → UDP Server** — set the address to `224.0.0.1`
+2. In `rig-bridge-config.json` (or via the setup UI at `http://localhost:5555`):
+
+```json
+{
+  "wsjtxRelay": {
+    "multicast": true,
+    "multicastGroup": "224.0.0.1",
+    "multicastInterface": ""
+  }
+}
+```
+
+Leave `multicastInterface` blank unless you have multiple network adapters and need to specify which one to use (enter its local IP, e.g. `"192.168.1.100"`).
+
+> `224.0.0.1` is the WSJT-X conventional multicast group. It is link-local — packets are not routed across subnet boundaries.
+
 ---
 
 ## OpenHamClock Setup
@@ -109,15 +245,19 @@ Executables are output to the `dist/` folder.
 
 ## Troubleshooting
 
-| Problem                | Solution                                                                  |
-| ---------------------- | ------------------------------------------------------------------------- |
-| No COM ports found     | Install USB driver (Silicon Labs CP210x for Yaesu, FTDI for some Kenwood) |
-| Port opens but no data | Check baud rate matches radio's CAT Rate setting                          |
-| Icom not responding    | Verify CI-V address matches your radio model                              |
-| CORS errors in browser | The bridge allows all origins by default                                  |
-| Port already in use    | Close flrig/rigctld if running — you don't need them anymore              |
-| PTT not responsive     | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)        |
-| macOS Comms Failure    | The bridge automatically applies a `stty` fix for CP210x drivers.         |
+| Problem                   | Solution                                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No COM ports found        | Install USB driver (Silicon Labs CP210x for Yaesu, FTDI for some Kenwood)                                                                                   |
+| Port opens but no data    | Check baud rate matches radio's CAT Rate setting                                                                                                            |
+| Icom not responding       | Verify CI-V address matches your radio model                                                                                                                |
+| CORS errors in browser    | The bridge allows all origins by default                                                                                                                    |
+| Port already in use       | Close flrig/rigctld if running — you don't need them anymore                                                                                                |
+| PTT not responsive        | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)                                                                                          |
+| macOS Comms Failure       | The bridge automatically applies a `stty` fix for CP210x drivers.                                                                                           |
+| TCI: Connection refused   | Enable TCI in your SDR app (Thetis → Setup → CAT Control → Enable TCI Server)                                                                               |
+| TCI: No frequency updates | Check `trx` / `vfo` index in config match the active transceiver in your SDR app                                                                            |
+| TCI: Remote SDR           | Set `tci.host` to the IP of the machine running the SDR application                                                                                         |
+| Multicast: no packets     | Verify `multicastGroup` matches what WSJT-X sends to; check OS firewall allows multicast UDP; set `multicastInterface` to the correct NIC IP if multi-homed |
 
 ---
 
@@ -154,12 +294,15 @@ rig-bridge/
 │
 └── plugins/
     ├── usb/
-    │   ├── index.js           # USB serial lifecycle (open, reconnect, poll)
-    │   ├── protocol-yaesu.js  # Yaesu CAT ASCII protocol
-    │   ├── protocol-kenwood.js# Kenwood ASCII protocol
-    │   └── protocol-icom.js   # Icom CI-V binary protocol
+    │   ├── index.js            # USB serial lifecycle (open, reconnect, poll)
+    │   ├── protocol-yaesu.js   # Yaesu CAT ASCII protocol
+    │   ├── protocol-kenwood.js # Kenwood ASCII protocol
+    │   └── protocol-icom.js    # Icom CI-V binary protocol
+    ├── tci.js             # TCI/SDR WebSocket plugin (Thetis, ExpertSDR, etc.)
     ├── rigctld.js         # rigctld TCP plugin
-    └── flrig.js           # flrig XML-RPC plugin
+    ├── flrig.js           # flrig XML-RPC plugin
+    ├── mock.js            # Simulated radio for testing (no hardware needed)
+    └── wsjtx-relay.js     # WSJT-X UDP listener → OpenHamClock relay
 ```
 
 ---
@@ -172,7 +315,7 @@ Each plugin exports an object with the following shape:
 module.exports = {
   id: 'my-plugin', // Unique identifier (matches config.radio.type)
   name: 'My Plugin', // Human-readable name
-  category: 'rig', // 'rig' | 'rotator' | 'logger' | 'other'
+  category: 'rig', // 'rig' | 'integration' | 'rotator' | 'logger' | 'other'
   configKey: 'radio', // Which config section this plugin reads
 
   create(config, { updateState, state }) {
@@ -205,6 +348,7 @@ module.exports = {
 **Categories:**
 
 - `rig` — radio control; the bridge dispatches `/freq`, `/mode`, `/ptt` to the active rig plugin
+- `integration` — background service plugins (e.g. WSJT-X relay); started via `registry.connectIntegrations()`
 - `rotator`, `logger`, `other` — use `registerRoutes(app)` to expose their own endpoints
 
 To register a plugin at startup, call `registry.register(descriptor)` in `rig-bridge.js` before `registry.connectActive()`.

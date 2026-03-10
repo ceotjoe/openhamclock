@@ -27,6 +27,7 @@ const net = require('net');
 const dgram = require('dgram');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const dns = require('dns');
 const mqttLib = require('mqtt');
 const { initCtyData, getCtyData, lookupCall } = require('./src/server/ctydat.js');
 
@@ -93,10 +94,15 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Trust first proxy (Railway, Docker, nginx, etc.) so rate limiting
-// uses X-Forwarded-For (real client IP) instead of the proxy's IP.
-// Without this, ALL users behind a reverse proxy share one rate limit bucket.
-app.set('trust proxy', 1);
+// Trust proxy setting — controls whether X-Forwarded-For headers are trusted.
+// Railway/Docker/nginx deployments need this for correct client IP detection.
+// Pi/local installs should NOT trust proxy headers since clients can forge them,
+// bypassing rate limiting by sending a different X-Forwarded-For with each request.
+// Default: trust proxy if running on Railway (PORT env is always set), otherwise don't.
+const TRUST_PROXY = process.env.TRUST_PROXY !== undefined
+  ? (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1' ? 1 : false)
+  : (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID) ? 1 : false;
+app.set('trust proxy', TRUST_PROXY);
 
 // Security: API key for write operations (set in .env to protect POST endpoints)
 // If not set, write endpoints are open (backward-compatible for local installs)
@@ -407,11 +413,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS — restrict to same origin by default; allow override via env
-const CORS_ORIGINS = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()) : true; // true = reflect request origin (same as before for local installs)
+// CORS — explicit origin allowlist to prevent malicious websites from accessing the API.
+// origin: true (the old default) reflects any requesting origin, which allows any website
+// the user visits to silently read their callsign, coordinates, QSO data, and (without
+// API_WRITE_KEY) write settings, move their rotator, or restart the server.
+const CORS_ORIGINS = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim())
+  : null; // null = no extra origins, only defaults below
+
+const defaultOrigins = [
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',  // Vite dev server
+  'http://127.0.0.1:5173',
+  'https://openhamclock.com',
+  'https://www.openhamclock.com',
+  'https://openhamclock.app',
+  'https://www.openhamclock.app',
+];
+const allowedOrigins = new Set([...defaultOrigins, ...(CORS_ORIGINS || [])]);
+
 app.use(
   cors({
-    origin: CORS_ORIGINS,
+    origin: (requestOrigin, callback) => {
+      // Allow requests with no Origin header (curl, Postman, server-to-server, same-origin)
+      if (!requestOrigin) return callback(null, true);
+      if (allowedOrigins.has(requestOrigin)) return callback(null, true);
+      // Don't set CORS headers for unknown origins — the browser's same-origin policy
+      // will block cross-origin reads. Using callback(null, false) instead of throwing
+      // an Error avoids breaking same-origin static asset requests on Railway/staging
+      // where the deployment URL isn't in the allowlist.
+      callback(null, false);
+    },
     methods: ['GET', 'POST'],
     maxAge: 86400,
   }),
@@ -865,7 +900,7 @@ app.get('/api/rotator/status', (req, res) => {
   });
 });
 
-app.post('/api/rotator/turn', async (req, res) => {
+app.post('/api/rotator/turn', writeLimiter, requireWriteAuth, async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   try {
     const { azimuth } = req.body || {};
@@ -886,7 +921,7 @@ app.post('/api/rotator/turn', async (req, res) => {
   }
 });
 
-app.post('/api/rotator/stop', async (req, res) => {
+app.post('/api/rotator/stop', writeLimiter, requireWriteAuth, async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   try {
     const result = await stopRotator();
@@ -1407,7 +1442,7 @@ const sessionTracker = {
         duration: now - session.firstSeen,
         durationFormatted: formatDuration(now - session.firstSeen),
         requests: session.requests,
-        ip: ip.replace(/\d+$/, 'x'), // Anonymize last octet
+        ip: ip.includes('.') ? ip.substring(0, ip.lastIndexOf('.') + 1) + 'x' : ip, // Anonymize last octet
       });
     }
     activeList.sort((a, b) => b.duration - a.duration);
@@ -1446,8 +1481,9 @@ app.use((req, res, next) => {
   rolloverVisitorStats();
 
   // Track concurrent sessions for ALL requests (not just countable routes)
-  const sessionIp =
-    req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
+  // Use req.ip which respects the trust proxy setting, not manual x-forwarded-for parsing
+  // which is trivially spoofable on installs without a reverse proxy.
+  const sessionIp = req.ip || req.connection?.remoteAddress || 'unknown';
   if (req.path !== '/api/health' && !req.path.startsWith('/assets/')) {
     sessionTracker.touch(sessionIp, req.headers['user-agent']);
   }
@@ -1455,8 +1491,7 @@ app.use((req, res, next) => {
   // Only count meaningful "visits" — initial page load or config fetch
   const countableRoutes = ['/', '/index.html', '/api/config'];
   if (countableRoutes.includes(req.path)) {
-    const ip =
-      req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || 'unknown';
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
 
     // Track today's visitors
     const isNewToday = !todayIPSet.has(ip);
@@ -1477,7 +1512,7 @@ app.use((req, res, next) => {
       visitorStats.allTimeVisitors++;
       queueGeoIPLookup(ip);
       logInfo(
-        `[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.replace(/\d+$/, 'x')}`,
+        `[Stats] New visitor (#${visitorStats.uniqueIPsToday.length} today, #${visitorStats.allTimeVisitors} all-time) from ${ip.includes('.') ? ip.substring(0, ip.lastIndexOf('.') + 1) + 'x' : ip}`,
       );
     } else if (isNewToday) {
       // Existing all-time visitor but new today — queue GeoIP in case cache was lost
@@ -2034,7 +2069,7 @@ app.get('/api/solar-indices', async (req, res) => {
 });
 
 // NASA SDO Solar Image Proxy — caches SDO/AIA images so clients don't hit NASA directly.
-// Multi-source: tries SDO direct first (works for self-hosters), then Helioviewer API (works from cloud).
+// Multi-source failover: SDO direct → LMSAL Sun Today (Lockheed) → Helioviewer API.
 const sdoImageCache = new Map(); // key: imageType → { buffer, contentType, timestamp }
 const SDO_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 const SDO_STALE_SERVE = 6 * 60 * 60 * 1000; // Serve stale up to 6 hours
@@ -2099,6 +2134,31 @@ const fetchFromHelioviewer = async (type, timeoutMs = 20000) => {
   }
 };
 
+// Helper: fetch from LMSAL Sun Today (Lockheed Martin Solar & Astrophysics Lab)
+// Independent of Goddard infrastructure — useful when sdo.gsfc.nasa.gov is down.
+// URL pattern: t{type}.jpg = 256x256 thumbnail (AIA channels only, no HMI)
+const LMSAL_TYPES = new Set(['0193', '0304', '0171', '0094']);
+const fetchFromLMSAL = async (type, timeoutMs = 15000) => {
+  if (!LMSAL_TYPES.has(type)) throw new Error(`LMSAL does not serve ${type}`);
+  const url = `https://sdowww.lmsal.com/sdomedia/SunInTime/mostrecent/t${type}.jpg`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': `OpenHamClock/${APP_VERSION}` },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length < 500) throw new Error(`Response too small (${buffer.length} bytes)`);
+    return { buffer, contentType: res.headers.get('content-type') || 'image/jpeg', source: 'LMSAL' };
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+};
+
 app.get('/api/solar/image/:type', async (req, res) => {
   const type = req.params.type;
   if (!SDO_VALID_TYPES.has(type)) {
@@ -2130,9 +2190,10 @@ app.get('/api/solar/image/:type', async (req, res) => {
     return res.status(503).json({ error: 'SDO temporarily unavailable' });
   }
 
-  // Try sources in order: SDO direct → Helioviewer
+  // Try sources in order: SDO direct → LMSAL Sun Today → Helioviewer
   const sources = [
     { name: 'SDO', fn: () => fetchFromSDO(type) },
+    { name: 'LMSAL', fn: () => fetchFromLMSAL(type) },
     { name: 'Helioviewer', fn: () => fetchFromHelioviewer(type) },
   ];
 
@@ -2891,8 +2952,13 @@ const DXSPIDER_NODES = [
 const DXSPIDER_SSID = '-56'; // OpenHamClock SSID
 
 function getDxClusterLoginCallsign(preferredCallsign = null) {
-  const candidate = (preferredCallsign || CONFIG.dxClusterCallsign || '').trim();
+  // Strip control characters to prevent telnet command injection via query params
+  const candidate = (preferredCallsign || CONFIG.dxClusterCallsign || '').replace(/[\x00-\x1F\x7F]/g, '').trim();
   if (candidate && candidate.toUpperCase() !== 'N0CALL') {
+    // Append default SSID if caller didn't include one
+    if (!candidate.includes('-')) {
+      return `${candidate.toUpperCase()}${DXSPIDER_SSID}`;
+    }
     return candidate.toUpperCase();
   }
 
@@ -2994,6 +3060,7 @@ const CUSTOM_DX_RETENTION_MS = 30 * 60 * 1000;
 const CUSTOM_DX_MAX_SPOTS = 500;
 const CUSTOM_DX_RECONNECT_DELAY_MS = 10000;
 const CUSTOM_DX_KEEPALIVE_MS = 30000;
+const CUSTOM_DX_STALE_MS = 5 * 60 * 1000; // Force reconnect after 5 min with no data
 const CUSTOM_DX_IDLE_TIMEOUT = 15 * 60 * 1000; // Reap sessions idle for 15 minutes
 const customDxSessions = new Map();
 
@@ -3092,11 +3159,13 @@ function connectCustomSession(session) {
   session.loginSent = false;
   session.commandSent = false;
   client.setTimeout(0);
+  client.setKeepAlive(true, 60000); // OS-level TCP keepalive probes every 60s
 
   client.connect(session.node.port, session.node.host, () => {
     session.connected = true;
     session.connecting = false;
     session.lastConnectedAt = Date.now();
+    session.lastDataAt = Date.now();
     logDebug(
       `[DX Cluster] DX Spider: connected to ${session.node.host}:${session.node.port} as ${session.loginCallsign}`,
     );
@@ -3111,6 +3180,15 @@ function connectCustomSession(session) {
 
     session.keepAliveTimer = setInterval(() => {
       if (session.client && session.connected) {
+        // Force reconnect if no data received for CUSTOM_DX_STALE_MS
+        const silentMs = Date.now() - (session.lastDataAt || 0);
+        if (silentMs > CUSTOM_DX_STALE_MS) {
+          logWarn(
+            `[DX Cluster] No data from ${session.node.host} in ${Math.round(silentMs / 60000)} min — forcing reconnect`,
+          );
+          handleCustomSessionDisconnect(session);
+          return;
+        }
         try {
           session.client.write('\r\n');
         } catch (e) {}
@@ -3119,6 +3197,7 @@ function connectCustomSession(session) {
   });
 
   client.on('data', (data) => {
+    session.lastDataAt = Date.now();
     session.buffer += data.toString();
 
     // Login prompt detection
@@ -3171,7 +3250,10 @@ function connectCustomSession(session) {
     }
   });
 
-  client.on('timeout', () => {});
+  client.on('timeout', () => {
+    logWarn(`[DX Cluster] Socket timeout for ${session.node.host} — reconnecting`);
+    handleCustomSessionDisconnect(session);
+  });
 
   client.on('error', (err) => {
     if (
@@ -3211,6 +3293,7 @@ function getOrCreateCustomSession(node, userCallsign = null) {
       reconnectTimer: null,
       keepAliveTimer: null,
       lastConnectedAt: 0,
+      lastDataAt: 0,
       lastUsedAt: Date.now(),
       cleanupTimer: null,
     };
@@ -3592,6 +3675,64 @@ function parseSpotHHMMzToTimestamp(timeStr, fallbackTs = Date.now()) {
   return ts;
 }
 
+/**
+ * SSRF protection: resolve hostname to IP and reject private/reserved addresses.
+ * Returns the resolved IP so callers can connect to the IP directly, preventing
+ * DNS rebinding (TOCTOU) attacks where the record changes between validation and connect.
+ */
+function isPrivateIP(ip) {
+  // Normalize IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1 → 127.0.0.1)
+  const normalized = ip.replace(/^::ffff:/i, '');
+
+  // IPv4 private/reserved ranges
+  const parts = normalized.split('.').map(Number);
+  if (parts.length === 4 && parts.every((n) => n >= 0 && n <= 255)) {
+    if (parts[0] === 127) return true;                                          // loopback
+    if (parts[0] === 10) return true;                                           // 10.0.0.0/8
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;     // 172.16.0.0/12
+    if (parts[0] === 192 && parts[1] === 168) return true;                     // 192.168.0.0/16
+    if (parts[0] === 169 && parts[1] === 254) return true;                     // link-local
+    if (parts[0] === 0) return true;                                            // 0.0.0.0/8
+    if (parts[0] >= 224) return true;                                           // multicast + reserved
+  }
+  // IPv6 private/reserved
+  const lower = normalized.toLowerCase();
+  if (lower === '::1' || lower === '::' ||
+      lower.startsWith('fe80:') || lower.startsWith('fc00:') ||
+      lower.startsWith('fd00:') || lower.startsWith('ff00:') ||
+      lower.startsWith('::ffff:')) {
+    // Catch any remaining IPv4-mapped forms that weren't normalized above
+    return true;
+  }
+  return false;
+}
+
+async function validateCustomHost(host) {
+  // Reject obvious localhost strings before DNS
+  if (/^localhost$/i.test(host)) return { ok: false, reason: 'localhost not allowed' };
+
+  // Resolve hostname to IPv4 addresses ONLY.
+  // We intentionally do not fall back to resolve6 because IPv6 has many equivalent
+  // representations for private addresses (e.g. ::ffff:7f00:1 = 127.0.0.1 in hex form)
+  // that bypass string-based checks. DX cluster telnet servers are IPv4.
+  let addresses;
+  try {
+    addresses = await dns.promises.resolve4(host);
+  } catch {
+    return { ok: false, reason: 'Host could not be resolved (IPv4 required for custom DX clusters)' };
+  }
+
+  // Check every resolved address — block if any resolve to private/reserved
+  for (const addr of addresses) {
+    if (isPrivateIP(addr)) {
+      return { ok: false, reason: 'Host resolves to a private/reserved address' };
+    }
+  }
+  // Return the first resolved IP so callers connect to the validated IP, not the hostname.
+  // This prevents DNS rebinding (TOCTOU) where the record changes between validation and connect.
+  return { ok: true, resolvedIP: addresses[0] };
+}
+
 app.get('/api/dxcluster/paths', async (req, res) => {
   // Parse query parameters for custom cluster settings
   const source = req.query.source || 'auto';
@@ -3601,28 +3742,15 @@ app.get('/api/dxcluster/paths', async (req, res) => {
   const userCallsign = (req.query.callsign || CONFIG.dxClusterCallsign || '').trim();
 
   // SECURITY: Validate custom host to prevent SSRF (internal network scanning)
+  // Resolves DNS and returns the validated IP. We connect to the IP, not the hostname,
+  // to prevent DNS rebinding (TOCTOU) where the record changes between validation and connect.
+  let resolvedHost = customHost;
   if (source === 'custom' && customHost) {
-    // Block private/reserved IP ranges and localhost
-    const blockedPatterns =
-      /^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|0\.|0:|\[::1\]|::1|fe80:|fc00:|fd00:|ff00:)/i;
-    if (blockedPatterns.test(customHost)) {
-      return res.status(400).json({ error: 'Custom host cannot be a private/reserved address' });
+    const hostCheck = await validateCustomHost(customHost);
+    if (!hostCheck.ok) {
+      return res.status(400).json({ error: `Custom host rejected: ${hostCheck.reason}` });
     }
-    // Block numeric-only hosts (raw IPs) that could be encoded to bypass above
-    // Only allow hostnames that look like legitimate DX Spider nodes
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(customHost)) {
-      const octets = customHost.split('.').map(Number);
-      if (
-        octets[0] === 10 ||
-        octets[0] === 127 ||
-        octets[0] === 0 ||
-        (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-        (octets[0] === 192 && octets[1] === 168) ||
-        (octets[0] === 169 && octets[1] === 254)
-      ) {
-        return res.status(400).json({ error: 'Custom host cannot be a private/reserved address' });
-      }
-    }
+    resolvedHost = hostCheck.resolvedIP; // Connect to the validated IP, not the hostname
     // Restrict port range to common DX Spider/telnet ports
     if (customPort < 1024 || customPort > 49151) {
       return res.status(400).json({ error: 'Port must be between 1024 and 49151' });
@@ -3632,7 +3760,7 @@ app.get('/api/dxcluster/paths', async (req, res) => {
   // Generate cache key based on source profile so custom/proxy/auto don't mix.
   const cacheKey =
     source === 'custom'
-      ? `custom-${customHost}-${customPort}-${getDxClusterLoginCallsign(userCallsign)}`
+      ? `custom-${resolvedHost}-${customPort}-${getDxClusterLoginCallsign(userCallsign)}`
       : `source-${source}`;
   const pathsCache = getDxPathsCache(cacheKey);
 
@@ -3652,11 +3780,11 @@ app.get('/api/dxcluster/paths', async (req, res) => {
     let usedSource = 'none';
 
     // Handle custom telnet source (persistent connection, no reconnect-per-poll)
-    if (source === 'custom' && customHost) {
+    if (source === 'custom' && resolvedHost) {
       logDebug(
-        `[DX Paths] Using custom telnet session: ${customHost}:${customPort} as ${getDxClusterLoginCallsign(userCallsign)}`,
+        `[DX Paths] Using custom telnet session: ${resolvedHost}:${customPort} as ${getDxClusterLoginCallsign(userCallsign)}`,
       );
-      const customNode = { host: customHost, port: customPort };
+      const customNode = { host: resolvedHost, port: customPort };
       const session = getOrCreateCustomSession(customNode, userCallsign);
       // Take the most recent spots from persistent session buffer.
       const customSpots = (session.spots || []).slice(0, 100).map((s) => ({
@@ -4446,7 +4574,7 @@ app.get('/api/qrz/status', (req, res) => {
 });
 
 // POST /api/qrz/configure — save QRZ credentials (from Settings UI)
-app.post('/api/qrz/configure', writeLimiter, async (req, res) => {
+app.post('/api/qrz/configure', writeLimiter, requireWriteAuth, async (req, res) => {
   const { username, password } = req.body || {};
 
   if (!username || !password) {
@@ -4510,7 +4638,7 @@ app.post('/api/qrz/configure', writeLimiter, async (req, res) => {
 });
 
 // POST /api/qrz/remove — remove saved QRZ credentials
-app.post('/api/qrz/remove', writeLimiter, (req, res) => {
+app.post('/api/qrz/remove', writeLimiter, requireWriteAuth, (req, res) => {
   qrzSession.username = CONFIG._qrzUsername || '';
   qrzSession.password = CONFIG._qrzPassword || '';
   qrzSession.key = null;
@@ -6561,7 +6689,28 @@ pskMqtt.cleanupInterval = setInterval(
 
 // SSE endpoint — clients connect here for real-time spots
 // ?type=grid subscribes by grid square instead of callsign
+
+// Per-IP connection limiter for SSE streams to prevent resource exhaustion.
+// Once an SSE connection is established it persists indefinitely, so the normal
+// request-rate limiter doesn't help. This caps concurrent open streams per IP.
+const MAX_SSE_PER_IP = parseInt(process.env.MAX_SSE_PER_IP || '10', 10);
+const sseConnectionsByIP = new Map();
+
 app.get('/api/pskreporter/stream/:identifier', (req, res) => {
+  // Use req.ip which respects the trust proxy setting, consistent with express-rate-limit.
+  // Manual x-forwarded-for parsing is trivially spoofable on installs without a reverse proxy.
+  const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+  const current = sseConnectionsByIP.get(ip) || 0;
+  if (current >= MAX_SSE_PER_IP) {
+    return res.status(429).json({ error: 'Too many open SSE connections from this IP' });
+  }
+  sseConnectionsByIP.set(ip, current + 1);
+  req.on('close', () => {
+    const count = sseConnectionsByIP.get(ip) || 1;
+    if (count <= 1) sseConnectionsByIP.delete(ip);
+    else sseConnectionsByIP.set(ip, count - 1);
+  });
+
   const identifier = req.params.identifier.toUpperCase();
   const type = (req.query.type || 'call').toLowerCase();
 
@@ -6928,7 +7077,7 @@ async function enrichSpotWithLocation(spot) {
 
   // Lookup location (don't block on failures)
   try {
-    const response = await fetch(`http://localhost:${PORT}/api/callsign/${skimmerCall}`);
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${encodeURIComponent(skimmerCall)}`);
     if (response.ok) {
       const locationData = await response.json();
 
@@ -7072,7 +7221,10 @@ app.get('/api/rbn/spots', async (req, res) => {
 
 // Endpoint to lookup skimmer location (cached permanently)
 app.get('/api/rbn/location/:callsign', async (req, res) => {
-  const callsign = req.params.callsign.toUpperCase();
+  const callsign = req.params.callsign.toUpperCase().replace(/[^\w\-\/]/g, '');
+  if (!callsign || callsign.length > 15) {
+    return res.status(400).json({ error: 'Invalid callsign' });
+  }
 
   // Check cache first
   if (callsignLocationCache.has(callsign)) {
@@ -7081,7 +7233,7 @@ app.get('/api/rbn/location/:callsign', async (req, res) => {
 
   try {
     // Look up via HamQTH
-    const response = await fetch(`http://localhost:${PORT}/api/callsign/${callsign}`);
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${encodeURIComponent(callsign)}`);
     if (response.ok) {
       const locationData = await response.json();
       const grid = latLonToGrid(locationData.lat, locationData.lon);
@@ -10451,7 +10603,11 @@ app.get('/api/health', (req, res) => {
             lastSaved: visitorStats.lastSaved,
           }
         : { enabled: !!STATS_FILE },
-      sessions: sessionTracker.getStats(),
+      // SECURITY: Session details include partially anonymized IPs — only expose to authenticated requests.
+      // Unauthenticated requests get aggregate counts only.
+      sessions: isAuthed
+        ? sessionTracker.getStats()
+        : { concurrent: sessionTracker.activeSessions.size, peakConcurrent: sessionTracker.peakConcurrent },
       visitors: {
         today: {
           date: visitorStats.today,
@@ -12867,6 +13023,11 @@ app.listen(PORT, '0.0.0.0', () => {
   }
   if (AUTO_UPDATE_ENABLED) {
     console.log(`  🔄 Auto-update enabled every ${AUTO_UPDATE_INTERVAL_MINUTES || 60} minutes`);
+  }
+  if (!API_WRITE_KEY) {
+    console.log('');
+    console.log('  ⚠️  API_WRITE_KEY is not set — write endpoints (settings, update, rotator, QRZ) are unprotected.');
+    console.log('     Set API_WRITE_KEY in .env to secure POST endpoints.');
   }
   console.log('  🖥️  Open your browser to start using OpenHamClock');
   console.log('');

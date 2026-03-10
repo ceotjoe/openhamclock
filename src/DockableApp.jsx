@@ -37,6 +37,7 @@ import { DockableLayoutProvider } from './contexts';
 import { useRig } from './contexts/RigContext.jsx';
 import { calculateBearing, calculateDistance, formatDistance } from './utils/geo.js';
 import { DXGridInput } from './components/DXGridInput.jsx';
+import DXCCSelect from './components/DXCCSelect.jsx';
 import './styles/flexlayout-openhamclock.css';
 import useMapLayers from './hooks/app/useMapLayers';
 import useRotator from './hooks/useRotator';
@@ -175,6 +176,7 @@ export const DockableApp = ({
     });
   }, []);
   const [showDXLocalTime, setShowDXLocalTime] = useState(false);
+  const [showDxccSelect, setShowDxccSelect] = useState(false);
 
   // ── Tabset auto-rotation (persistent per tabset) ──
   const [tabsetRotation, setTabsetRotation] = useState(() => {
@@ -415,6 +417,7 @@ export const DockableApp = ({
       'on-air': { name: 'On Air', icon: '🔴' },
       'id-timer': { name: 'ID Timer', icon: '📢' },
       keybindings: { name: 'Keyboard Shortcuts', icon: '⌨️' },
+      'lock-layout': { name: 'Lock Layout', icon: '🔒' },
     };
   }, [isLocalInstall]);
 
@@ -495,12 +498,40 @@ export const DockableApp = ({
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <div style={{ fontFamily: 'JetBrains Mono', fontSize: '14px', flex: '1 1 auto', minWidth: 0 }}>
-            <DXGridInput
-              dxGrid={dxGrid}
-              onDXChange={handleDXChange}
-              dxLocked={dxLocked}
-              style={{ color: 'var(--accent-amber)', fontSize: '22px', fontWeight: '700' }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <DXGridInput
+                dxGrid={dxGrid}
+                onDXChange={handleDXChange}
+                dxLocked={dxLocked}
+                style={{
+                  color: 'var(--accent-amber)',
+                  fontSize: '22px',
+                  fontWeight: '700',
+                  flex: '1 1 auto',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowDxccSelect((prev) => !prev)}
+                title={t('app.dxLocation.dxccToggleTitle')}
+                style={{
+                  background: showDxccSelect ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                  color: showDxccSelect ? '#000' : 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                }}
+              >
+                DXCC
+              </button>
+            </div>
+            {showDxccSelect && (
+              <DXCCSelect dxLocked={dxLocked} onDXChange={handleDXChange} style={{ margin: '5px 0 10px 0' }} />
+            )}
             <DXLocalTime
               currentTime={currentTime}
               dxLocation={dxLocation}
@@ -915,6 +946,22 @@ export const DockableApp = ({
           content = <KeybindingsPanel keybindings={keybindingsList} nodeId={nodeId} />;
           break;
 
+        case 'lock-layout':
+          content = (
+            <button
+              onClick={toggleLayoutLock}
+              title={
+                layoutLocked
+                  ? 'Unlock layout — allow drag, resize, and close'
+                  : 'Lock layout — prevent accidental changes'
+              }
+              className={`panel-layout-lock-button ${layoutLocked ? 'locked' : 'unlocked'}`}
+            >
+              {layoutLocked ? '🔒' : '🔓'} Layout {layoutLocked ? 'Locked' : 'Unlocked'}
+            </button>
+          );
+          break;
+
         default:
           content = (
             <div style={{ padding: '20px', color: '#ff6b6b', textAlign: 'center' }}>
@@ -1182,38 +1229,6 @@ export const DockableApp = ({
           updateInProgress={updateInProgress}
           showUpdateButton={isLocalInstall}
         />
-      </div>
-
-      {/* Dockable toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          padding: '2px 16px 0',
-        }}
-      >
-        <button
-          onClick={toggleLayoutLock}
-          title={
-            layoutLocked ? 'Unlock layout — allow drag, resize, and close' : 'Lock layout — prevent accidental changes'
-          }
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: layoutLocked ? 'rgba(255, 170, 0, 0.15)' : 'var(--bg-tertiary)',
-            border: `1px solid ${layoutLocked ? 'var(--accent-amber)' : 'var(--border-color)'}`,
-            borderRadius: '4px',
-            padding: '3px 8px',
-            fontSize: '11px',
-            fontFamily: 'JetBrains Mono, monospace',
-            color: layoutLocked ? 'var(--accent-amber)' : 'var(--text-muted)',
-            cursor: 'pointer',
-          }}
-        >
-          {layoutLocked ? '🔒' : '🔓'} Layout {layoutLocked ? 'Locked' : 'Unlocked'}
-        </button>
       </div>
 
       {/* Dockable Layout */}

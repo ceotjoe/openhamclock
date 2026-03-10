@@ -437,11 +437,11 @@ export function useLayer({
 
       marker.bindPopup(`
         <div style="font-family: 'JetBrains Mono', monospace;">
-          <b>📡 ${skimmerCall}</b><br>
-          Heard: <b>${callsign}</b><br>
-          SNR: <b>${snr} dB</b><br>
-          Band: <b>${band}</b><br>
-          Freq: <b>${(freq / 1000).toFixed(1)} kHz</b><br>
+          <strong>📡 ${skimmerCall}</strong><br>
+          Heard: <strong>${callsign}</strong><br>
+          SNR: <strong>${snr} dB</strong><br>
+          Band: <strong>${band}</strong><br>
+          Freq: <strong>${(freq / 1000).toFixed(1)} kHz</strong><br>
           Grid: ${skimmerGrid}<br>
           Time: ${timestamp.toLocaleTimeString()}
         </div>
@@ -454,29 +454,23 @@ export function useLayer({
 
   // Create control panel
   useEffect(() => {
-    if (!map || !enabled) return;
+    if (!enabled || !map || controlRef.current) return;
 
-    // Create control panel
-    const control = L.control({ position: 'topright' });
+    const Control = L.Control.extend({
+      options: { position: 'topright' },
+      onAdd: function () {
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const div = L.DomUtil.create('div', 'rbn-control', panelWrapper);
+        div.style.cssText = `
+          min-width: 250px;
+          max-width: 300px;
+        `;
+        div.innerHTML = `
+        <div class="floating-panel-header">📡 RBN: ${callsign}</div>
 
-    control.onAdd = function () {
-      const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control rbn-control');
-      div.style.background = 'var(--bg-panel)';
-      div.style.padding = '10px';
-      div.style.borderRadius = '8px';
-      div.style.minWidth = '250px';
-      div.style.color = 'var(--text-primary)';
-      div.style.fontFamily = "'JetBrains Mono', monospace";
-      div.style.fontSize = '12px';
-      div.style.border = '1px solid var(--border-color)';
-
-      div.innerHTML = `
-        <div style="margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #00b4ff;">
-          <b>📡 RBN: ${callsign}</b>
-        </div>
-        <div id="rbn-stats-display" style="margin-bottom: 8px; color: var(--text-secondary);">
-          Spots: <b>0</b> | Skimmers: <b>0</b><br>
-          Avg SNR: <b>0 dB</b>
+          <div id="rbn-stats-display" style="margin-bottom: 8px; color: var(--text-secondary);">
+          Spots: <strong>0</strong> | Skimmers: <strong>0</strong><br>
+          Avg SNR: <strong>0 dB</strong>
         </div>
         <div style="margin-bottom: 6px;">
           <label>Band:</label>
@@ -513,88 +507,91 @@ export function useLayer({
         <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color); font-size: 10px; color: var(--text-muted);">
           Data: reversebeacon.net | Update: 10sec
         </div>
-      `;
+        `;
 
-      // Add event listeners
-      setTimeout(() => {
-        const bandSelect = document.getElementById('rbn-band-select');
-        const timeSlider = document.getElementById('rbn-time-slider');
-        const timeValue = document.getElementById('rbn-time-value');
-        const snrSlider = document.getElementById('rbn-snr-slider');
-        const snrValue = document.getElementById('rbn-snr-value');
-        const pathsCheck = document.getElementById('rbn-paths-check');
+        // Add event listeners
+        setTimeout(() => {
+          const bandSelect = document.getElementById('rbn-band-select');
+          const timeSlider = document.getElementById('rbn-time-slider');
+          const timeValue = document.getElementById('rbn-time-value');
+          const snrSlider = document.getElementById('rbn-snr-slider');
+          const snrValue = document.getElementById('rbn-snr-value');
+          const pathsCheck = document.getElementById('rbn-paths-check');
 
-        if (bandSelect) {
-          bandSelect.value = selectedBand;
-          bandSelect.addEventListener('change', (e) => setSelectedBand(e.target.value));
-        }
-
-        if (timeSlider && timeValue) {
-          // Set initial value
-          timeSlider.value = timeWindow;
-          if (timeWindow < 1) {
-            timeValue.textContent = (timeWindow * 60).toFixed(0) + 's';
-          } else {
-            timeValue.textContent = timeWindow.toFixed(1) + 'min';
+          if (bandSelect) {
+            bandSelect.value = selectedBand;
+            bandSelect.addEventListener('change', (e) => setSelectedBand(e.target.value));
           }
 
-          timeSlider.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            // Display as seconds if < 1 minute, otherwise minutes
-            if (val < 1) {
-              timeValue.textContent = (val * 60).toFixed(0) + 's';
+          if (timeSlider && timeValue) {
+            // Set initial value
+            timeSlider.value = timeWindow;
+            if (timeWindow < 1) {
+              timeValue.textContent = (timeWindow * 60).toFixed(0) + 's';
             } else {
-              timeValue.textContent = val.toFixed(1) + 'min';
+              timeValue.textContent = timeWindow.toFixed(1) + 'min';
             }
-            setTimeWindow(val);
-          });
-        }
 
-        if (snrSlider && snrValue) {
-          snrSlider.value = minSNR;
-          snrValue.textContent = minSNR;
-          snrSlider.addEventListener('input', (e) => {
-            const val = e.target.value;
-            snrValue.textContent = val;
-            setMinSNR(parseInt(val));
-          });
-        }
+            timeSlider.addEventListener('input', (e) => {
+              const val = parseFloat(e.target.value);
+              // Display as seconds if < 1 minute, otherwise minutes
+              if (val < 1) {
+                timeValue.textContent = (val * 60).toFixed(0) + 's';
+              } else {
+                timeValue.textContent = val.toFixed(1) + 'min';
+              }
+              setTimeWindow(val);
+            });
+          }
 
-        if (pathsCheck) {
-          pathsCheck.checked = showPaths;
-          pathsCheck.addEventListener('change', (e) => setShowPaths(e.target.checked));
-        }
-      }, 100);
+          if (snrSlider && snrValue) {
+            snrSlider.value = minSNR;
+            snrValue.textContent = minSNR;
+            snrSlider.addEventListener('input', (e) => {
+              const val = e.target.value;
+              snrValue.textContent = val;
+              setMinSNR(parseInt(val));
+            });
+          }
 
-      L.DomEvent.disableClickPropagation(div);
-      L.DomEvent.disableScrollPropagation(div);
+          if (pathsCheck) {
+            pathsCheck.checked = showPaths;
+            pathsCheck.addEventListener('change', (e) => setShowPaths(e.target.checked));
+          }
+        }, 100);
 
-      return div;
-    };
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
 
-    control.addTo(map);
+        return panelWrapper;
+      },
+    });
+
+    const control = new Control();
+    map.addControl(control);
     controlRef.current = control;
 
     // Make the control draggable and minimizable
     // Use setTimeout to ensure DOM is ready
     setTimeout(() => {
-      const controlElement = control.getContainer();
-      if (controlElement) {
+      // const container = control.getContainer();
+      const container = document.querySelector('.rbn-control');
+      if (container) {
         // Apply saved position IMMEDIATELY before making draggable
         const saved = localStorage.getItem('rbn-panel-position');
         if (saved) {
           try {
             const { top, left } = JSON.parse(saved);
-            controlElement.style.position = 'fixed';
-            controlElement.style.top = top + 'px';
-            controlElement.style.left = left + 'px';
-            controlElement.style.right = 'auto';
-            controlElement.style.bottom = 'auto';
+            container.style.position = 'fixed';
+            container.style.top = top + 'px';
+            container.style.left = left + 'px';
+            container.style.right = 'auto';
+            container.style.bottom = 'auto';
           } catch (e) {}
         }
 
-        makeDraggable(controlElement, 'rbn-panel-position');
-        addMinimizeToggle(controlElement, 'rbn-panel', {
+        makeDraggable(container, 'rbn-panel-position', { snap: 5 });
+        addMinimizeToggle(container, 'rbn-panel-position', {
           contentClassName: 'rbn-panel-content',
           buttonClassName: 'rbn-minimize-btn',
         });
@@ -622,8 +619,8 @@ export function useLayer({
 
     if (statsDisplay) {
       statsDisplay.innerHTML = `
-        Spots: <b>${stats.total}</b> | Skimmers: <b>${stats.skimmers}</b><br>
-        Avg SNR: <b>${stats.avgSNR} dB</b>
+        Spots: <strong>${stats.total}</strong> | Skimmers: <strong>${stats.skimmers}</strong><br>
+        Avg SNR: <strong>${stats.avgSNR} dB</strong>
       `;
     }
   }, [enabled, stats]);

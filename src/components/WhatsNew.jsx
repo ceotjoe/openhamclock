@@ -20,6 +20,79 @@ const ANNOUNCEMENT = {
 // Each entry: { version, date, heading, features: [...] }
 const CHANGELOG = [
   {
+    version: '15.6.5',
+    date: '2026-03-09',
+    heading:
+      'Major security hardening release — CORS lockdown, SSRF elimination, rate-limit bypass fixes, and XSS prevention. Plus LMSAL solar image fallback, lightning unit preferences, DXCC entity selector, rig-bridge multicast, and Raspberry Pi setup improvements.',
+    features: [
+      {
+        icon: '🔒',
+        title: 'Security Hardening — CORS & API Protection',
+        desc: 'Replaced wildcard CORS policy with an explicit origin allowlist. Previously, any website you visited could silently access your API, read your callsign/coordinates, and (without API_WRITE_KEY) control your rotator or restart the server. Now only localhost and openhamclock.com/app origins are allowed by default. Add custom origins via CORS_ORIGINS in .env. Rotator and QRZ credential endpoints now require API_WRITE_KEY authentication. Server prints a startup warning when API_WRITE_KEY is not set.',
+      },
+      {
+        icon: '🛡️',
+        title: 'Security Hardening — SSRF Elimination',
+        desc: 'Custom DX cluster connections are now fully protected against Server-Side Request Forgery. The server resolves DNS to an IPv4 address, validates it against private/reserved ranges, and connects to the validated IP directly — preventing DNS rebinding (TOCTOU) attacks. IPv6 resolution removed entirely to eliminate representation bypass attacks (e.g. ::ffff:7f00:1 mapping to 127.0.0.1). Telnet command injection prevented via control character stripping on callsign inputs.',
+      },
+      {
+        icon: '🔐',
+        title: 'Security Hardening — Rate Limiting & XSS',
+        desc: 'Trust proxy is now auto-detected (enabled on Railway, disabled on Pi/local) to prevent rate-limit bypass via spoofed X-Forwarded-For headers. SSE connections have a per-IP limit (default 10) to prevent resource exhaustion. Health endpoint session details gated behind authentication. DOM XSS fixes applied to N3FJP logged QSO colors and APRS Newsfeed userscript. ReDoS vulnerability fixed in IP anonymization. Dockerfile now runs as non-root user.',
+      },
+      {
+        icon: '📻',
+        title: 'Rig-Bridge Security',
+        desc: 'Rig-Bridge gets the same security treatment: CORS restricted to explicit origins (no more wildcard), HTTP server binds to localhost by default (set bindAddress to 0.0.0.0 for LAN access), serial port paths validated against OS-specific allowlists, and WSJT-X relay URL validated to prevent SSRF to internal services.',
+      },
+      {
+        icon: '☀️',
+        title: 'LMSAL Solar Image Fallback',
+        desc: 'Solar imagery now has three-source failover: NASA SDO → LMSAL Sun Today (Lockheed Martin) → Helioviewer. When NASA Goddard infrastructure is down (increasingly common during budget disruptions), the Lockheed mirror provides independent coverage for all four AIA channels. HMI continuum skips LMSAL (not available) and falls through to Helioviewer.',
+      },
+      {
+        icon: '⚡',
+        title: 'Lightning Distance Units',
+        desc: 'Lightning proximity panel now respects your km/miles unit preference. Closest strike distance, strike list, and radius labels all display in your chosen unit instead of always showing both.',
+      },
+      {
+        icon: '🌍',
+        title: 'DXCC Entity Selector',
+        desc: 'New DXCC entity picker button next to the DX grid display in Modern and Dockable layouts. Browse or search the full DXCC entity list to quickly set a DX target without knowing the grid square.',
+      },
+      {
+        icon: '📰',
+        title: 'DX News Text Scale',
+        desc: 'DX News ticker now has A-/A+ buttons to adjust font size (0.7x to 2.0x). Setting persists across sessions. Useful for readability on large displays or compact layouts.',
+      },
+      {
+        icon: '📡',
+        title: 'Rig-Bridge Multicast',
+        desc: 'WSJT-X relay in rig-bridge now supports UDP multicast, allowing multiple applications (GridTracker, JTAlert, OpenHamClock) to receive WSJT-X packets simultaneously. Enable via the setup UI checkbox or multicast settings in rig-bridge-config.json.',
+      },
+      {
+        icon: '🔧',
+        title: 'Rig-Bridge Simulated Radio',
+        desc: 'New mock radio plugin for testing rig-bridge without hardware. Simulates a radio drifting through several bands. Enable with radio.type = "mock" in config or select Simulated Radio in the setup UI.',
+      },
+      {
+        icon: '🥧',
+        title: 'Raspberry Pi Setup Improvements',
+        desc: 'Pi setup script now handles 32-bit ARM (armhf) directly from nodejs.org since NodeSource dropped support for Node 20+. npm install uses --ignore-scripts to avoid electron-winstaller failures on ARM. Dev dependencies pruned after build, freeing ~500MB on SD cards.',
+      },
+      {
+        icon: '🔒',
+        title: 'Layout Lock in Border Panel',
+        desc: 'Layout lock toggle moved to a dedicated border tab on the left edge of the Dockable layout. Always accessible, never accidentally closeable (enableClose: false). Keeps the header clean while maintaining one-click access.',
+      },
+      {
+        icon: '🔗',
+        title: 'DX Cluster Connection Reliability',
+        desc: 'Custom DX cluster telnet sessions now use TCP keepalive and automatic stale-connection detection (reconnects after 5 minutes of silence). Callsign SSID (-56) appended automatically when missing.',
+      },
+    ],
+  },
+  {
     version: '15.6.4',
     date: '2026-03-04',
     heading:

@@ -361,6 +361,30 @@ body::before {
 }
 
 /* ============================================
+   LOCK LAYOUT PANEL
+   ============================================ */
+.panel-layout-lock-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  margin: 1em auto;
+}
+
+.panel-layout-lock-button.locked {
+  color: var(--accent-amber);
+  background: rgba(255, 170, 0, 0.15);
+  border-color: var(--accent-amber);
+}
+
+/* ============================================
    CUSTOM MARKER STYLES
    ============================================ */
 .custom-marker {
@@ -490,6 +514,51 @@ body::before {
 }
 
 /* ============================================
+   Leaflet Control Panels
+   ============================================ */
+.panel-wrapper > div {
+  transition: all 0.3s ease;
+  background: var(--bg-panel);
+  border-radius: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  min-width: 200px;
+  max-width: 280px;
+}
+
+.panel-wrapper > div:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.panel-wrapper > div .floating-panel-header {
+  user-select: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  margin: 0;
+  padding: 10px;
+  font-size: 13px;
+  color: var(--accent-cyan);
+  letter-spacing: 0.5px;
+}
+
+/* minimize toggle */
+.panel-wrapper > div .floating-panel-header button {
+  color: var(--text-secondary);
+  width: 1em;
+  min-width: 1em;
+  height: 1em;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 1.1em;
+  line-height: 1em;
+}
+
+/* ============================================
    DX CLUSTER MAP TOOLTIPS
    ============================================ */
 .dx-tooltip {
@@ -599,7 +668,6 @@ body::before {
 }
 
 /* Theme controls */
-
 #theme-selector-component .theme-select-button {
   padding: 10px;
   background: var(--bg-tertiary);
@@ -702,22 +770,6 @@ body::before {
 
 .wspr-marker {
   animation: wspr-marker-pulse 2s ease-in-out infinite;
-}
-
-/* Control panel transitions */
-.wspr-filter-control,
-.wspr-stats,
-.wspr-legend,
-.wspr-chart {
-  transition: all 0.3s ease;
-}
-
-.wspr-filter-control:hover,
-.wspr-stats:hover,
-.wspr-legend:hover,
-.wspr-chart:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
 }
 
 /* Filter input styles */
@@ -960,6 +1012,17 @@ body::before {
   user-select: none;
   position: relative;
   z-index: 10000 !important;
+}
+
+/* content spacing in panels */
+.wspr-panel-content,
+.lightning-panel-content,
+.grayline-panel-content,
+.muf-panel-content,
+.n3fjp-panel-content,
+.rbn-panel-content,
+.voacap-panel-content {
+  padding: 0 10px 10px 10px;
 }
 
 /* ============================================

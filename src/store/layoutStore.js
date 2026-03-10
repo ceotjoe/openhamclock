@@ -18,7 +18,22 @@ export const DEFAULT_LAYOUT = {
     tabSetEnableDrag: true,
     tabSetEnableTabStrip: true,
   },
-  borders: [],
+  borders: [
+    {
+      type: 'border',
+      location: 'left',
+      id: 'left-border-tabset',
+      children: [
+        {
+          type: 'tab',
+          name: 'Lock Layout',
+          component: 'lock-layout',
+          id: 'lock-layout-tab',
+          enableClose: false,
+        },
+      ],
+    },
+  ],
   layout: {
     type: 'row',
     weight: 100,
@@ -104,6 +119,7 @@ export const PANEL_DEFINITIONS = {
   'world-map': { name: 'World Map', icon: '🗺️', description: 'Interactive world map' },
   'rig-control': { name: 'Rig Control', icon: '📻', description: 'Transceiver control and feedback' },
   'on-air': { name: 'On Air', icon: '🔴', description: 'Large TX status indicator' },
+  'lock-layout': { name: 'Lock the Layout', icon: '🔒', description: 'Lock the layout' },
 };
 
 // Load layout from localStorage
@@ -113,7 +129,13 @@ export const loadLayout = () => {
     if (stored) {
       const parsed = JSON.parse(stored);
       // Validate basic structure
-      if (parsed.global && parsed.layout) {
+      if (parsed.global && parsed.layout && parsed.borders) {
+        // Use of the Left Border in the dockable layout has been added
+        // if the user does not have the defined border saved, add the default
+        if (parsed.borders.length === 0) {
+          parsed.borders = DEFAULT_LAYOUT.borders;
+          saveLayout(parsed);
+        }
         return parsed;
       }
     }

@@ -12,10 +12,12 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'rig-bridge-config.json');
 
 const DEFAULT_CONFIG = {
   port: 5555,
+  bindAddress: '127.0.0.1', // Bind to localhost only; set to '0.0.0.0' for LAN access
+  corsOrigins: '', // Extra allowed CORS origins (comma-separated); OHC origins always allowed
   debug: false, // Centralized verbose CAT logging flag
   logging: true, // Enable/disable console log capture & broadcast to UI
   radio: {
-    type: 'none', // none | yaesu | kenwood | icom | flrig | rigctld
+    type: 'none', // none | yaesu | kenwood | icom | flrig | rigctld | tci
     serialPort: '', // COM3, /dev/ttyUSB0, etc.
     baudRate: 38400,
     dataBits: 8,
@@ -33,6 +35,12 @@ const DEFAULT_CONFIG = {
     flrigHost: '127.0.0.1',
     flrigPort: 12345,
   },
+  tci: {
+    host: 'localhost',
+    port: 40001,
+    trx: 0, // transceiver index (0 = primary)
+    vfo: 0, // VFO index (0 = A, 1 = B)
+  },
   wsjtxRelay: {
     enabled: false,
     url: '', // OpenHamClock server URL (e.g. https://openhamclock.com)
@@ -41,6 +49,9 @@ const DEFAULT_CONFIG = {
     udpPort: 2237, // UDP port to listen on for WSJT-X packets
     batchInterval: 2000, // Batch send interval in ms
     verbose: false, // Log all decoded messages
+    multicast: false, // Join a multicast group instead of unicast
+    multicastGroup: '224.0.0.1', // WSJT-X conventional multicast group
+    multicastInterface: '', // Local NIC IP for multi-homed systems; '' = let OS choose
   },
 };
 
@@ -63,6 +74,7 @@ function loadConfig() {
         ...DEFAULT_CONFIG,
         ...raw,
         radio: { ...DEFAULT_CONFIG.radio, ...(raw.radio || {}) },
+        tci: { ...DEFAULT_CONFIG.tci, ...(raw.tci || {}) },
         wsjtxRelay: { ...DEFAULT_CONFIG.wsjtxRelay, ...(raw.wsjtxRelay || {}) },
         // Coerce logging to boolean in case the stored value is a string
         logging: raw.logging !== undefined ? !!raw.logging : DEFAULT_CONFIG.logging,
@@ -87,6 +99,7 @@ function applyCliArgs() {
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--port') config.port = parseInt(args[++i]);
+    if (args[i] === '--bind') config.bindAddress = args[++i];
     if (args[i] === '--debug') config.debug = true;
   }
 }

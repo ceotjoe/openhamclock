@@ -4,6 +4,46 @@ All notable changes to OpenHamClock will be documented in this file.
 
 > **📅 Schedule Change:** Starting with v15.5.10, OpenHamClock moves to a weekly release cycle. Updates will ship on **Tuesday nights (EST)** — one release per week for better testing and stability.
 
+## [15.6.5] - 2026-03-09
+
+### Security
+
+- **CORS lockdown**: Replaced wildcard `origin: true` with explicit origin allowlist (localhost, openhamclock.com/app). Prevents malicious websites from accessing the API via the user's browser. Custom origins configurable via `CORS_ORIGINS` env var.
+- **SSRF elimination**: Custom DX cluster hosts are now DNS-resolved to IPv4, validated against private/reserved ranges, and the connection uses the validated IP (not hostname) to prevent DNS rebinding. IPv6 fallback removed to eliminate representation bypass attacks.
+- **Rotator & QRZ auth**: `/api/rotator/turn`, `/api/rotator/stop`, `/api/qrz/configure`, `/api/qrz/remove` now require `API_WRITE_KEY` authentication.
+- **Trust proxy auto-detect**: `trust proxy` enabled only on Railway (auto-detected), disabled on Pi/local installs to prevent rate-limit bypass via spoofed `X-Forwarded-For` headers. Override with `TRUST_PROXY` env var.
+- **SSE connection limiter**: Per-IP cap on concurrent SSE streams (default 10, configurable via `MAX_SSE_PER_IP`) to prevent resource exhaustion.
+- **Telnet command injection**: Control characters stripped from DX cluster login callsigns.
+- **DOM XSS fixes**: `sanitizeColor()` for N3FJP logged QSO line colors; `esc()` helper for APRS Newsfeed userscript.
+- **ReDoS fix**: Replaced `/\d+$/` regex with `substring()` for IP anonymization.
+- **URL encoding**: `encodeURIComponent()` applied to callsign parameters in localhost fetch calls.
+- **RBN callsign validation**: Input sanitized and length-checked on `/api/rbn/location/:callsign`.
+- **Health endpoint**: Session details (partial IPs, user agents) gated behind `API_WRITE_KEY` auth.
+- **Dockerfile**: Application now runs as non-root user (`nodejs`, UID 1001).
+- **Startup warning**: Server prints visible warning when `API_WRITE_KEY` is not set.
+- **Rig-bridge CORS**: Restricted to explicit origin allowlist (was wildcard `*`).
+- **Rig-bridge localhost binding**: HTTP server binds to `127.0.0.1` by default (was `0.0.0.0`).
+- **Rig-bridge serial port validation**: Paths validated against OS-specific patterns (COM*, /dev/tty*, /dev/cu.*).
+- **Rig-bridge relay SSRF**: Relay URL validated to reject private/reserved addresses.
+
+### Added
+
+- **LMSAL solar image fallback**: Three-source failover for solar imagery: SDO direct → LMSAL Sun Today (Lockheed Martin) → Helioviewer API. Independent of NASA Goddard infrastructure.
+- **Lightning unit preferences**: Proximity panel distances respect km/miles setting from allUnits.
+- **DXCC entity selector**: Browse/search DXCC entities to set DX target in Modern and Dockable layouts.
+- **DX News text scale**: Adjustable font size (0.7x–2.0x) with A-/A+ buttons. Persists in localStorage.
+- **Layout lock border panel**: Lock/unlock toggle in dedicated FlexLayout border tab (Dockable layout).
+- **Rig-bridge multicast**: WSJT-X relay supports UDP multicast for multi-app packet sharing.
+- **Rig-bridge simulated radio**: Mock plugin for testing without hardware (`radio.type = "mock"`).
+- **DX cluster TCP keepalive**: Persistent telnet sessions use OS-level keepalive and auto-reconnect after 5 min silence.
+- **DX cluster SSID**: Callsign SSID (-56) appended automatically when not provided.
+
+### Fixed
+
+- **Rotator enabled by default**: `.env.example` had `ROTATOR_PROVIDER=pstrotator_udp` uncommented, causing fresh installs to send UDP to a hardcoded IP. All rotator lines now commented out.
+- **Pi setup (armhf)**: NodeSource dropped 32-bit ARM support for Node 20+. Setup script now downloads armv7l binaries directly from nodejs.org with retry support.
+- **Pi setup (electron)**: `npm install --ignore-scripts` prevents electron-winstaller postinstall failures on ARM. `ELECTRON_SKIP_BINARY_DOWNLOAD=1` skips useless Electron download. `npm prune --omit=dev` frees ~500MB after build.
+
 ## [15.5.10] - 2026-02-20
 
 ### Fixed

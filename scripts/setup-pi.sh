@@ -189,7 +189,7 @@ update_system() {
 # Install Node.js
 install_nodejs() {
     echo -e "${BLUE}>>> Installing Node.js ${NODE_VERSION}...${NC}"
-    
+
     # Check if Node.js is already installed
     if command -v node &> /dev/null; then
         CURRENT_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
@@ -198,14 +198,55 @@ install_nodejs() {
             return
         fi
     fi
-    
-    # Install Node.js via NodeSource
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash - || {
-        echo -e "${RED}✗ NodeSource setup failed. Check your Debian version and internet connection.${NC}"
-        exit 1
-    }
-    sudo apt-get install -y nodejs
-    
+
+    ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+
+    if [ "$ARCH" = "armhf" ]; then
+        # NodeSource dropped 32-bit ARM (armhf) support from Node.js 20 onwards.
+        # The official nodejs.org project still publishes armv7l tarballs, so we
+        # download and install those directly instead.
+        echo -e "${YELLOW}⚠ 32-bit ARM (armhf) detected — NodeSource does not support this architecture.${NC}"
+        echo -e "${BLUE}  Downloading official Node.js ${NODE_VERSION} armv7l binary from nodejs.org...${NC}"
+
+        NODE_DIST_BASE="https://nodejs.org/dist/latest-v${NODE_VERSION}.x"
+        NODE_TARBALL=$(curl -fsSL "$NODE_DIST_BASE/" \
+            | grep -o "node-v[0-9.]*-linux-armv7l\.tar\.gz" \
+            | head -1)
+
+        if [ -z "$NODE_TARBALL" ]; then
+            echo -e "${RED}✗ Could not locate a Node.js ${NODE_VERSION} armv7l release on nodejs.org.${NC}"
+            exit 1
+        fi
+
+        # Download to a temp file with retry support.
+        # Piping curl directly into tar gives no retry opportunity on a
+        # dropped connection; saving to disk first lets curl resume/retry
+        # and keeps extraction separate so errors are easier to diagnose.
+        echo -e "${BLUE}  Installing $NODE_TARBALL ...${NC}"
+        NODE_TMPFILE=$(mktemp /tmp/nodejs-armv7l-XXXXXX.tar.gz)
+        curl -fsSL \
+            --retry 3 --retry-delay 5 --retry-connrefused \
+            "$NODE_DIST_BASE/$NODE_TARBALL" \
+            -o "$NODE_TMPFILE" || {
+            rm -f "$NODE_TMPFILE"
+            echo -e "${RED}✗ Failed to download Node.js armv7l binary (tried 3 times).${NC}"
+            exit 1
+        }
+        sudo tar -xz -C /usr/local --strip-components=1 -f "$NODE_TMPFILE" || {
+            rm -f "$NODE_TMPFILE"
+            echo -e "${RED}✗ Failed to extract Node.js armv7l binary.${NC}"
+            exit 1
+        }
+        rm -f "$NODE_TMPFILE"
+    else
+        # amd64 and arm64 are supported by NodeSource.
+        curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo -E bash - || {
+            echo -e "${RED}✗ NodeSource setup failed. Check your Debian version and internet connection.${NC}"
+            exit 1
+        }
+        sudo apt-get install -y nodejs
+    fi
+
     echo -e "${GREEN}✓ Node.js $(node -v) installed${NC}"
 }
 
@@ -249,15 +290,24 @@ setup_repository() {
     # Prevent file permission changes from blocking future updates
     git config core.fileMode false 2>/dev/null
     
-    # Install npm dependencies
-    npm install --include=dev
-    
+    # Install npm dependencies.
+    # --ignore-scripts skips lifecycle hooks (postinstall, prepare, etc.) that are
+    # irrelevant or harmful on ARM Linux — most notably electron-winstaller's
+    # postinstall, which tries to copy vendor/7z-arm.exe and fails on a Pi because
+    # that Windows-only file is not shipped for Linux targets.
+    # Husky git-hooks (prepare) are also skipped, which is fine on a production Pi.
+    ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm install --include=dev --ignore-scripts
+
     # Download vendor assets (fonts, Leaflet) for self-hosting — no external CDN requests
     echo -e "${BLUE}>>> Downloading vendor assets for privacy...${NC}"
     bash scripts/vendor-download.sh || echo -e "${YELLOW}⚠ Vendor download failed — will fall back to CDN${NC}"
-    
+
     # Build frontend for production
     npm run build
+
+    # Remove dev dependencies (electron, electron-builder, etc.) after the build.
+    # This frees ~500 MB of node_modules that are not needed at runtime on the Pi.
+    npm prune --omit=dev
     
     # Make update script executable
     chmod +x scripts/update.sh 2>/dev/null || true

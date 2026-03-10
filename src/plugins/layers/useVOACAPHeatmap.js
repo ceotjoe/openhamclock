@@ -179,7 +179,7 @@ export function useLayer({ map, enabled, opacity, locator }) {
 
   // Create control panel
   useEffect(() => {
-    if (!map || !enabled) return;
+    if (!enabled || !map || controlRef.current) return;
 
     // Avoid duplicate controls
     if (controlRef.current) {
@@ -192,9 +192,8 @@ export function useLayer({ map, enabled, opacity, locator }) {
     const VOACAPControl = L.Control.extend({
       options: { position: 'topright' },
       onAdd: function () {
-        const container = L.DomUtil.create('div', 'voacap-heatmap-control');
-        L.DomEvent.disableClickPropagation(container);
-        L.DomEvent.disableScrollPropagation(container);
+        const panelWrapper = L.DomUtil.create('div', 'panel-wrapper');
+        const container = L.DomUtil.create('div', 'voacap-heatmap-control', panelWrapper);
 
         const bandOptions = BANDS.map(
           (b, i) => `<option value="${i}" ${i === selectedBand ? 'selected' : ''}>${b.label} (${b.freq} MHz)</option>`,
@@ -213,89 +212,73 @@ export function useLayer({ map, enabled, opacity, locator }) {
           .join('');
 
         container.innerHTML = `
-          <div style="
-            background: rgba(20, 20, 40, 0.92);
-            border: 1px solid rgba(255, 170, 0, 0.4);
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            color: #ddd;
-            min-width: 180px;
-            backdrop-filter: blur(8px);
-          ">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-              <span data-drag-handle="true" style="color: #00b4ff; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; cursor: grab; user-select: none;">🌐 VOACAP Heatmap</span>
-              <button class="voacap-minimize-btn" style="
-                background: none; border: none; color: #888; font-size: 10px;
-                cursor: pointer; padding: 2px 4px;
-              ">▼</button>
-            </div>
-            <div class="voacap-panel-content">
+            <div class="floating-panel-header">🌐 VOACAP Heatmap</div>
+
               <div style="margin-bottom: 6px;">
-                <label style="color: #888; font-size: 10px;">Band</label>
+                <label style="color: var(--text-secondary); font-size: 10px;">Band</label>
                 <select id="voacap-band-select" style="
                   width: 100%; margin-top: 2px; padding: 4px;
-                  background: rgba(0,0,0,0.5); color: #fff;
-                  border: 1px solid #555; border-radius: 4px;
+                  background: var(--bg-tertiary); color: var(--text-primary);
+                  border: 1px solid var(--border-color); border-radius: 3px;
                   font-family: 'JetBrains Mono', monospace; font-size: 11px;
                 ">${bandOptions}</select>
               </div>
               <div style="display: flex; gap: 6px; margin-bottom: 6px;">
                 <div style="flex: 1;">
-                  <label style="color: #888; font-size: 10px;">Mode</label>
+                  <label style="color: var(--text-secondary); font-size: 10px;">Mode</label>
                   <select id="voacap-mode-select" style="
                     width: 100%; margin-top: 2px; padding: 4px;
-                    background: rgba(0,0,0,0.5); color: #fff;
-                    border: 1px solid #555; border-radius: 4px;
+                    background: var(--bg-tertiary); color: var(--text-primary);
+                    border: 1px solid var(--border-color); border-radius: 3px;
                     font-family: 'JetBrains Mono', monospace; font-size: 11px;
                   ">${modeOptions}</select>
                 </div>
                 <div style="flex: 1;">
-                  <label style="color: #888; font-size: 10px;">Power</label>
+                  <label style="color: var(--text-secondary); font-size: 10px;">Power</label>
                   <select id="voacap-power-select" style="
                     width: 100%; margin-top: 2px; padding: 4px;
-                    background: rgba(0,0,0,0.5); color: #fff;
-                    border: 1px solid #555; border-radius: 4px;
+                    background: var(--bg-tertiary); color: var(--text-primary);
+                    border: 1px solid var(--border-color); border-radius: 3px;
                     font-family: 'JetBrains Mono', monospace; font-size: 11px;
                   ">${powerOptions}</select>
                 </div>
               </div>
               <div style="margin-bottom: 8px;">
-                <label style="color: #888; font-size: 10px;">Grid Resolution</label>
+                <label style="color: var(--text-secondary); font-size: 10px;">Grid Resolution</label>
                 <select id="voacap-grid-select" style="
                   width: 100%; margin-top: 2px; padding: 4px;
-                  background: rgba(0,0,0,0.5); color: #fff;
-                  border: 1px solid #555; border-radius: 4px;
+                  background: var(--bg-tertiary); color: var(--text-primary);
+                  border: 1px solid var(--border-color); border-radius: 3px;
                   font-family: 'JetBrains Mono', monospace; font-size: 11px;
                 ">${gridOptions}</select>
               </div>
               <div style="
                 display: flex; justify-content: space-between; align-items: center;
-                background: rgba(0,0,0,0.3); border-radius: 4px; padding: 4px 6px;
+                background: var(--bg-tertiary); border-radius: 4px; padding: 4px 6px;
               ">
                 <span style="display: inline-block; width: 12px; height: 12px; background: rgba(40,30,80,0.5); border-radius: 2px;" title="< 10% reliability"></span>
-                <span style="color: #888; font-size: 9px;">Poor</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">Poor</span>
                 <span style="display: inline-block; width: 12px; height: 12px; background: rgba(255,80,0,0.9); border-radius: 2px;"></span>
-                <span style="color: #888; font-size: 9px;">Low</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">Low</span>
                 <span style="display: inline-block; width: 12px; height: 12px; background: rgba(255,255,0,0.9); border-radius: 2px;"></span>
-                <span style="color: #888; font-size: 9px;">Fair</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">Fair</span>
                 <span style="display: inline-block; width: 12px; height: 12px; background: rgba(0,220,0,0.9); border-radius: 2px;"></span>
-                <span style="color: #888; font-size: 9px;">Good</span>
+                <span style="color: var(--text-secondary); font-size: 9px;">Good</span>
               </div>
-              <div id="voacap-status" style="color: #666; font-size: 9px; margin-top: 6px; text-align: center;">
+              <div id="voacap-status" style="color: var(--text-muted); font-size: 9px; margin-top: 6px; text-align: center;">
                 ${loading ? 'Loading...' : data ? `${data.mode || 'SSB'} ${data.power || 100}W | SFI: ${data.solarData?.sfi} K: ${data.solarData?.kIndex}` : 'Ready'}
               </div>
-            </div>
-          </div>
         `;
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
 
-        return container;
+        return panelWrapper;
       },
     });
 
-    controlRef.current = new VOACAPControl();
-    map.addControl(controlRef.current);
+    const control = new VOACAPControl();
+    map.addControl(control);
+    controlRef.current = control;
 
     // Helper to update both plugin state AND global config in localStorage
     const updateGlobalConfig = (mode, power) => {
@@ -311,27 +294,27 @@ export function useLayer({ map, enabled, opacity, locator }) {
 
     // Wire up event handlers after DOM is ready
     setTimeout(() => {
-      const container = controlRef.current?._container;
-      if (!container) return;
+      const container = document.querySelector('.voacap-heatmap-control');
+      if (container) {
+        // Apply saved position
+        const saved = localStorage.getItem('voacap-heatmap-position');
+        if (saved) {
+          try {
+            const { top, left } = JSON.parse(saved);
+            container.style.position = 'fixed';
+            container.style.top = top + 'px';
+            container.style.left = left + 'px';
+            container.style.right = 'auto';
+            container.style.bottom = 'auto';
+          } catch (e) {}
+        }
 
-      // Apply saved position
-      const saved = localStorage.getItem('voacap-heatmap-position');
-      if (saved) {
-        try {
-          const { top, left } = JSON.parse(saved);
-          container.style.position = 'fixed';
-          container.style.top = top + 'px';
-          container.style.left = left + 'px';
-          container.style.right = 'auto';
-          container.style.bottom = 'auto';
-        } catch (e) {}
+        makeDraggable(container, 'voacap-heatmap-position', { snap: 5 });
+        addMinimizeToggle(container, 'voacap-heatmap-position', {
+          contentClassName: 'voacap-panel-content',
+          buttonClassName: 'voacap-minimize-btn',
+        });
       }
-
-      addMinimizeToggle(container, 'voacap-heatmap-position', {
-        contentClassName: 'voacap-panel-content',
-        buttonClassName: 'voacap-minimize-btn',
-      });
-      makeDraggable(container, 'voacap-heatmap-position');
 
       const bandSelect = document.getElementById('voacap-band-select');
       const gridSelect = document.getElementById('voacap-grid-select');
