@@ -246,6 +246,8 @@ function buildSetupHtml(version) {
     .icom-addr.show { display: block; }
     .tci-opts { display: none; }
     .tci-opts.show { display: block; }
+    .rigctld-opts { display: none; }
+    .rigctld-opts.show { display: block; }
     .ohc-instructions {
       background: #0f1923;
       border: 1px dashed #2a3040;
@@ -460,6 +462,15 @@ function buildSetupHtml(version) {
               <input type="number" id="legacyPort" value="12345">
             </div>
           </div>
+        </div>
+
+        <!-- rigctld-only options -->
+        <div class="rigctld-opts" id="rigctldOpts">
+          <div class="checkbox-row">
+            <input type="checkbox" id="fixSplit">
+            <span>Fix split mode (Yaesu newcat / FT-991A)</span>
+          </div>
+          <div class="help-text">Send ST0 after each frequency change to prevent Hamlib from accidentally activating split mode. Enable if your radio enters split mode whenever OpenHamClock changes frequency.</div>
         </div>
 
         <!-- TCI/SDR options -->
@@ -706,12 +717,13 @@ function buildSetupHtml(version) {
       try {
         const res = await fetch('/api/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ wsjtxRelay }),
         });
+        if (res.status === 401) { showToast('❌ Auth failed — check API token', 'error'); return; }
         const data = await res.json();
         if (data.success) {
-          currentConfig = data.config;
+          currentConfig = { ...currentConfig, ...data.config, apiToken: currentConfig?.apiToken };
           showToast('✅ Integrations saved!', 'success');
         }
       } catch (e) {
@@ -748,11 +760,21 @@ function buildSetupHtml(version) {
     let currentConfig = null;
     let statusInterval = null;
 
+    function authHeaders() {
+      const token = currentConfig?.apiToken || '';
+      return {
+        'Content-Type': 'application/json',
+        ...(token ? { 'X-RigBridge-Token': token } : {}),
+      };
+    }
+
     async function init() {
       try {
         const [cfgRes, logRes] = await Promise.all([fetch('/api/config'), fetch('/api/logging')]);
         currentConfig = await cfgRes.json();
         const logData = await logRes.json();
+        // Load token first so authHeaders() works for all subsequent calls.
+        await loadTokenDisplay();
         populateForm(currentConfig);
         populateIntegrations(currentConfig);
         setLoggingBtn(logData.logging !== false); // default true
@@ -760,7 +782,6 @@ function buildSetupHtml(version) {
         startStatusPoll();
         startLogStream();
         startWsjtxStatusPoll();
-        loadTokenDisplay();
       } catch (e) {
         showToast('Failed to load config', 'error');
       }
@@ -769,14 +790,16 @@ function buildSetupHtml(version) {
     // ── Security token UI ─────────────────────────────────────────────────
     async function loadTokenDisplay() {
       try {
-        const res = await fetch('/api/config');
+        const res = await fetch('/api/token');
         if (!res.ok) return;
-        const cfg = await res.json();
+        const data = await res.json();
+        // Patch token into currentConfig so authHeaders() can use it immediately.
+        if (currentConfig) currentConfig.apiToken = data.apiToken || '';
         const input = document.getElementById('token-display');
         const badge = document.getElementById('auth-badge');
         if (!input) return;
-        if (cfg.apiToken) {
-          input.value = cfg.apiToken;
+        if (data.apiToken) {
+          input.value = data.apiToken;
           if (badge) { badge.textContent = 'Auth enabled'; badge.style.color = '#22c55e'; }
         } else {
           input.value = '(no token — auth disabled)';
@@ -799,13 +822,13 @@ function buildSetupHtml(version) {
     async function regenerateToken() {
       if (!confirm('Regenerate API token? You will need to update the token in OpenHamClock settings.')) return;
       try {
-        const cfg = await (await fetch('/api/config')).json();
         const res = await fetch('/api/token/regenerate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-RigBridge-Token': cfg.apiToken || '' },
+          headers: authHeaders(),
         });
         if (!res.ok) { showToast('Regenerate failed — auth error', 'error'); return; }
         const data = await res.json();
+        if (currentConfig) currentConfig.apiToken = data.apiToken;
         document.getElementById('token-display').value = data.apiToken;
         showToast('New token generated — update OpenHamClock settings', 'success');
       } catch (e) {
@@ -826,6 +849,7 @@ function buildSetupHtml(version) {
         r.type === 'rigctld' ? (r.rigctldHost || '127.0.0.1') : (r.flrigHost || '127.0.0.1');
       document.getElementById('legacyPort').value =
         r.type === 'rigctld' ? (r.rigctldPort || 4532) : (r.flrigPort || 12345);
+      document.getElementById('fixSplit').checked = !!r.fixSplit;
       const tci = cfg.tci || {};
       document.getElementById('tciHost').value = tci.host || 'localhost';
       document.getElementById('tciPort').value = tci.port || 40001;
@@ -844,6 +868,7 @@ function buildSetupHtml(version) {
       document.getElementById('legacyOpts').className = 'legacy-opts' + (isLegacy ? ' show' : '');
       document.getElementById('icomAddr').className = 'icom-addr' + (type === 'icom' ? ' show' : '');
       document.getElementById('tciOpts').className = 'tci-opts' + (isTci ? ' show' : '');
+      document.getElementById('rigctldOpts').className = 'rigctld-opts' + (type === 'rigctld' ? ' show' : '');
 
       if (!skipDefaults) {
         if (type === 'yaesu') {
@@ -866,7 +891,7 @@ function buildSetupHtml(version) {
       const sel = document.getElementById('serialPort');
       sel.innerHTML = '<option value="">Scanning...</option>';
       try {
-        const res = await fetch('/api/ports');
+        const res = await fetch('/api/ports', { headers: authHeaders() });
         const ports = await res.json();
         sel.innerHTML = '<option value="">— Select port —</option>';
         if (ports.length === 0) {
@@ -899,7 +924,7 @@ function buildSetupHtml(version) {
         try {
           const res = await fetch('/api/test', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders(),
             body: JSON.stringify({ serialPort, baudRate, stopBits, rtscts }),
           });
           const data = await res.json();
@@ -931,6 +956,7 @@ function buildSetupHtml(version) {
       if (type === 'rigctld') {
         radio.rigctldHost = document.getElementById('legacyHost').value;
         radio.rigctldPort = parseInt(document.getElementById('legacyPort').value);
+        radio.fixSplit = document.getElementById('fixSplit').checked;
       } else if (type === 'flrig') {
         radio.flrigHost = document.getElementById('legacyHost').value;
         radio.flrigPort = parseInt(document.getElementById('legacyPort').value);
@@ -951,12 +977,13 @@ function buildSetupHtml(version) {
       try {
         const res = await fetch('/api/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ radio, tci }),
         });
+        if (res.status === 401) { showToast('❌ Auth failed — check API token', 'error'); return; }
         const data = await res.json();
         if (data.success) {
-          currentConfig = data.config;
+          currentConfig = { ...currentConfig, ...data.config, apiToken: currentConfig?.apiToken };
           showToast('✅ Saved! Connecting to radio...', 'success');
         }
       } catch (e) {
@@ -1028,7 +1055,7 @@ function buildSetupHtml(version) {
       try {
         const res = await fetch('/api/logging', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ logging: !loggingEnabled }),
         });
         const data = await res.json();
@@ -1117,7 +1144,7 @@ function buildSetupHtml(version) {
       let es;
 
       function connect() {
-        es = new EventSource('/api/log/stream');
+        es = new EventSource('/api/log/stream?token=' + encodeURIComponent(currentConfig?.apiToken || ''));
 
         es.onopen = () => setLogStatus(true);
 
@@ -1183,6 +1210,33 @@ function createServer(registry, version) {
   );
   app.use(express.json());
 
+  // ─── Rate limiting ───────────────────────────────────────────────────────
+  // Simple in-memory sliding-window limiter — no extra dependencies.
+  const _rlWindows = new Map(); // key → [timestamp, ...]
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, ts] of _rlWindows) {
+      const fresh = ts.filter((t) => now - t < 60000);
+      if (fresh.length === 0) _rlWindows.delete(key);
+      else _rlWindows.set(key, fresh);
+    }
+  }, 300000); // purge stale entries every 5 min
+
+  function rateLimit(maxRequests, windowMs) {
+    return (req, res, next) => {
+      if (!config.apiToken) return next(); // no auth configured — skip rate limiting
+      const key = (req.ip || '') + req.path;
+      const now = Date.now();
+      const ts = (_rlWindows.get(key) || []).filter((t) => now - t < windowMs);
+      if (ts.length >= maxRequests) {
+        return res.status(429).json({ error: 'Too many requests — slow down' });
+      }
+      ts.push(now);
+      _rlWindows.set(key, ts);
+      next();
+    };
+  }
+
   // SECURITY: Token-based authentication for write (state-changing) endpoints.
   // Enforced only when config.apiToken is non-empty, so existing installs with
   // no token in their config file continue to work unchanged (soft rollout).
@@ -1209,6 +1263,10 @@ function createServer(registry, version) {
   // middleware above handles origin filtering for all routes. A manual wildcard
   // header here would bypass that and expose the log stream to any origin.
   app.get('/api/log/stream', (req, res) => {
+    // EventSource cannot send custom headers, so the token is passed as a query param.
+    if (config.apiToken && req.query.token !== config.apiToken) {
+      return res.status(401).end('Unauthorized');
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -1241,7 +1299,7 @@ function createServer(registry, version) {
   });
 
   // ─── API: List serial ports ───
-  app.get('/api/ports', async (req, res) => {
+  app.get('/api/ports', requireAuth, async (req, res) => {
     const ports = await listPorts();
     res.json(ports);
   });
@@ -1264,6 +1322,8 @@ function createServer(registry, version) {
   // SSRF via the config API. Private IP ranges are deliberately allowed since
   // these backends legitimately run on a Pi or another machine on the same LAN.
   // What we reject is URL-scheme injection ("http://...") and path traversal.
+  const isValidPort = (p) => Number.isInteger(p) && p >= 1 && p <= 65535;
+
   const isValidRemoteHost = (h) => {
     if (!h || typeof h !== 'string') return false;
     // Reject anything that looks like a URL (scheme present)
@@ -1280,26 +1340,31 @@ function createServer(registry, version) {
   };
 
   app.get('/api/config', (req, res) => {
-    res.json(config);
+    // Omit apiToken — callers that need it use GET /api/token instead.
+    const { apiToken: _omit, ...safeConfig } = config;
+    res.json(safeConfig);
   });
 
   // ─── API: Token management ───
-  // Returns only whether a token is set (not the token value itself) for UI badge.
+  // Returns the token for display in the local setup UI. Accessible without auth
+  // because the setup UI must bootstrap itself before it has a token to send.
+  // Protected by localhost-only binding and CORS origin filtering.
   app.get('/api/token', (req, res) => {
-    res.json({ tokenSet: !!config.apiToken });
+    res.json({ tokenSet: !!config.apiToken, apiToken: config.apiToken });
   });
 
   // Regenerate token — requires the current token to prevent CSRF.
-  app.post('/api/token/regenerate', requireAuth, (req, res) => {
+  app.post('/api/token/regenerate', rateLimit(3, 60000), requireAuth, (req, res) => {
     config.apiToken = require('crypto').randomBytes(16).toString('hex');
     saveConfig();
     console.log('[Server] API token regenerated');
     res.json({ success: true, apiToken: config.apiToken });
   });
 
-  app.post('/api/config', requireAuth, (req, res) => {
+  app.post('/api/config', rateLimit(10, 60000), requireAuth, (req, res) => {
     const newConfig = req.body;
-    if (newConfig.port) config.port = newConfig.port;
+    // config.port is intentionally not live-editable — changing the listen port
+    // requires a restart; silently applying it here would break the running server.
     if (newConfig.radio) {
       // Validate serial port path if provided
       if (newConfig.radio.serialPort && !isValidSerialPort(newConfig.radio.serialPort)) {
@@ -1312,18 +1377,30 @@ function createServer(registry, version) {
       if (newConfig.radio.rigctldHost !== undefined && !isValidRemoteHost(newConfig.radio.rigctldHost)) {
         return res.status(400).json({ success: false, error: 'Invalid rigctld host' });
       }
+      if (newConfig.radio.flrigPort !== undefined && !isValidPort(newConfig.radio.flrigPort)) {
+        return res.status(400).json({ success: false, error: 'Invalid flrig port (1–65535)' });
+      }
+      if (newConfig.radio.rigctldPort !== undefined && !isValidPort(newConfig.radio.rigctldPort)) {
+        return res.status(400).json({ success: false, error: 'Invalid rigctld port (1–65535)' });
+      }
       config.radio = { ...config.radio, ...newConfig.radio };
     }
     if (typeof newConfig.logging === 'boolean') {
       config.logging = newConfig.logging;
     }
     if (newConfig.wsjtxRelay) {
+      if (newConfig.wsjtxRelay.udpPort !== undefined && !isValidPort(newConfig.wsjtxRelay.udpPort)) {
+        return res.status(400).json({ success: false, error: 'Invalid UDP port (1–65535)' });
+      }
       config.wsjtxRelay = { ...config.wsjtxRelay, ...newConfig.wsjtxRelay };
     }
     if (newConfig.tci) {
       // SECURITY: Validate TCI host to prevent SSRF
       if (newConfig.tci.host !== undefined && !isValidRemoteHost(newConfig.tci.host)) {
         return res.status(400).json({ success: false, error: 'Invalid TCI host' });
+      }
+      if (newConfig.tci.port !== undefined && !isValidPort(newConfig.tci.port)) {
+        return res.status(400).json({ success: false, error: 'Invalid TCI port (1–65535)' });
       }
       config.tci = { ...config.tci, ...newConfig.tci };
     }
@@ -1425,21 +1502,26 @@ function createServer(registry, version) {
     });
   });
 
-  app.post('/freq', requireAuth, (req, res) => {
+  app.post('/freq', rateLimit(20, 1000), requireAuth, (req, res) => {
     const { freq } = req.body;
-    if (!freq) return res.status(400).json({ error: 'Missing freq' });
-    registry.dispatch('setFreq', freq);
+    const hz = Number(freq);
+    if (!Number.isFinite(hz) || hz < 1000 || hz > 75000000000) {
+      return res.status(400).json({ error: 'freq must be a number between 1 kHz and 75 GHz' });
+    }
+    registry.dispatch('setFreq', hz);
     res.json({ success: true });
   });
 
-  app.post('/mode', requireAuth, (req, res) => {
+  app.post('/mode', rateLimit(10, 1000), requireAuth, (req, res) => {
     const { mode } = req.body;
-    if (!mode) return res.status(400).json({ error: 'Missing mode' });
+    if (typeof mode !== 'string' || mode.length === 0 || mode.length > 20 || !/^[A-Za-z0-9-]+$/.test(mode)) {
+      return res.status(400).json({ error: 'mode must be 1–20 alphanumeric characters' });
+    }
     registry.dispatch('setMode', mode);
     res.json({ success: true });
   });
 
-  app.post('/ptt', requireAuth, (req, res) => {
+  app.post('/ptt', rateLimit(5, 1000), requireAuth, (req, res) => {
     const { ptt } = req.body;
     if (ptt && !config.radio.pttEnabled) {
       return res.status(403).json({ error: 'PTT disabled in configuration' });

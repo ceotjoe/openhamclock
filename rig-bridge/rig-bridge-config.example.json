@@ -18,6 +18,7 @@
     "pttEnabled": false,
     "rigctldHost": "127.0.0.1",
     "rigctldPort": 4532,
+    "fixSplit": false,
     "flrigHost": "127.0.0.1",
     "flrigPort": 12345
   },

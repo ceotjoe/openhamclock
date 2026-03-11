@@ -35,6 +35,33 @@ TCI (Transceiver Control Interface) is a WebSocket-based protocol used by modern
 | **flrig**   | XML-RPC  | 12345        |
 | **rigctld** | TCP      | 4532         |
 
+### rigctld Configuration
+
+Edit `rig-bridge-config.json` (or use the setup UI at `http://localhost:5555`):
+
+```json
+{
+  "radio": {
+    "type": "rigctld",
+    "rigctldHost": "127.0.0.1",
+    "rigctldPort": 4532,
+    "fixSplit": false
+  }
+}
+```
+
+| Field         | Description                                                | Default     |
+| ------------- | ---------------------------------------------------------- | ----------- |
+| `rigctldHost` | Host running rigctld                                       | `127.0.0.1` |
+| `rigctldPort` | rigctld TCP port                                           | `4532`      |
+| `fixSplit`    | Send `ST0` after each frequency change to reset split mode | `false`     |
+
+**Yaesu split mode issue:** Radios using Hamlib's newcat backend (FT-991A, FT-DX10, FT-950, FT-891, etc.) may enter split mode whenever OpenHamClock sets the frequency. This is a Hamlib internals issue — the backend sends a TX-VFO-select CAT command while resolving the active VFO, which the radio interprets as activating split. Enable `fixSplit` to send `S 0 VFOA` after each frequency change to reset split automatically.
+
+> **Permanent fix:** Start rigctld with `--set-conf=rig_vfo=1` to avoid VFO disambiguation entirely — this eliminates the side-effect without requiring `fixSplit`.
+
+---
+
 ### For Testing (No Hardware Required)
 
 | Type                | Description                                                          |
@@ -83,6 +110,8 @@ node rig-bridge.js --debug       # Enable raw hex/ASCII CAT traffic logging
 1. Connect USB-B cable from radio to computer
 2. On the radio: **Menu → Operation Setting → CAT Rate → 38400**
 3. In Rig Bridge: Select **Yaesu**, pick your COM port, baud **38400**, stop bits **2**, and enable **Hardware Flow (RTS/CTS)**
+
+**Using rigctld instead of direct USB?** See the [rigctld Configuration](#rigctld-configuration) section — enable **Fix split mode** in the setup UI (or set `fixSplit: true` in config) if the radio enters split mode on every frequency change.
 
 ### Icom IC-7300
 
@@ -258,6 +287,7 @@ Executables are output to the `dist/` folder.
 | WSJT-X relay not receiving (unicast) | WSJT-X must run on the same machine. In WSJT-X set UDP Server to `127.0.0.1`. For remote WSJT-X, enable multicast instead                                   |
 | Port already in use                  | Close flrig/rigctld if running — you don't need them anymore                                                                                                |
 | PTT not responsive                   | Enable **Hardware Flow (RTS/CTS)** (especially for FT-991A/FT-710)                                                                                          |
+| rigctld: split mode activates        | Enable **Fix split mode** in the setup UI (or set `radio.fixSplit: true` in config). Permanent fix: start rigctld with `--set-conf=rig_vfo=1`               |
 | macOS Comms Failure                  | The bridge automatically applies a `stty` fix for CP210x drivers.                                                                                           |
 | TCI: Connection refused              | Enable TCI in your SDR app (Thetis → Setup → CAT Control → Enable TCI Server)                                                                               |
 | TCI: No frequency updates            | Check `trx` / `vfo` index in config match the active transceiver in your SDR app                                                                            |
@@ -270,22 +300,25 @@ Executables are output to the `dist/` folder.
 
 Fully backward compatible with the original rig-daemon API:
 
-| Method | Endpoint                | Auth | Description                               |
-| ------ | ----------------------- | ---- | ----------------------------------------- |
-| GET    | `/status`               |      | Current freq, mode, PTT, connected status |
-| GET    | `/stream`               |      | SSE stream of real-time updates           |
-| POST   | `/freq`                 | 🔐   | Set frequency: `{ "freq": 14074000 }`     |
-| POST   | `/mode`                 | 🔐   | Set mode: `{ "mode": "USB" }`             |
-| POST   | `/ptt`                  | 🔐   | Set PTT: `{ "ptt": true }`                |
-| GET    | `/api/ports`            |      | List available serial ports               |
-| GET    | `/api/config`           |      | Get current configuration                 |
-| POST   | `/api/config`           | 🔐   | Update configuration & reconnect          |
-| POST   | `/api/test`             | 🔐   | Test a serial port connection             |
-| GET    | `/api/token`            |      | Returns `{ tokenSet: true/false }`        |
-| POST   | `/api/token/regenerate` | 🔐   | Generate a new API token                  |
+| Method | Endpoint                | Auth | Description                                      |
+| ------ | ----------------------- | ---- | ------------------------------------------------ |
+| GET    | `/status`               |      | Current freq, mode, PTT, connected status        |
+| GET    | `/stream`               |      | SSE stream of real-time rig state updates        |
+| POST   | `/freq`                 | 🔐   | Set frequency: `{ "freq": 14074000 }`            |
+| POST   | `/mode`                 | 🔐   | Set mode: `{ "mode": "USB" }`                    |
+| POST   | `/ptt`                  | 🔐   | Set PTT: `{ "ptt": true }`                       |
+| GET    | `/api/ports`            | 🔐   | List available serial ports                      |
+| GET    | `/api/config`           |      | Get current configuration (token field excluded) |
+| POST   | `/api/config`           | 🔐   | Update configuration & reconnect                 |
+| POST   | `/api/test`             | 🔐   | Test a serial port connection                    |
+| GET    | `/api/token`            |      | Returns `{ tokenSet: bool, apiToken: string }`   |
+| POST   | `/api/token/regenerate` | 🔐   | Generate a new API token                         |
+| GET    | `/api/log/stream`       | †    | SSE stream of console log output (setup UI)      |
 
 **🔐 Authentication:** Protected endpoints require the `X-RigBridge-Token: <token>` header.
 Find your token at `http://localhost:5555` (Security card). Auth is only enforced when a token is set in config (see Security section below).
+
+**† `/api/log/stream`:** `EventSource` cannot send custom headers. Pass the token as a query parameter instead: `/api/log/stream?token=<token>`.
 
 ## Security
 
@@ -293,8 +326,10 @@ rig-bridge is designed to run locally and defaults to a secure configuration:
 
 - **Localhost-only binding** — the HTTP server binds to `127.0.0.1` by default. Set `bindAddress: "0.0.0.0"` in `rig-bridge-config.json` only if you need LAN access (e.g. bridge on a Pi, browser on a desktop).
 - **Restricted CORS** — only `openhamclock.com` and `localhost` origins are allowed.
-- **API Token** — write endpoints (`/ptt`, `/freq`, `/mode`, `/api/config`) require an `X-RigBridge-Token` header. A token is auto-generated on first run and shown at `http://localhost:5555`.
-- **Input validation** — serial port paths and plugin host values are validated before use.
+- **API Token** — write endpoints (`/ptt`, `/freq`, `/mode`, `/api/config`, `/api/ports`) require an `X-RigBridge-Token` header. A token is auto-generated on first run and shown at `http://localhost:5555`. The token is excluded from the `GET /api/config` response; use `GET /api/token` to retrieve it.
+- **Rate limiting** — PTT, freq, and mode endpoints are rate-limited to prevent hardware damage from runaway clients.
+- **Input validation** — serial port paths, plugin host values, frequencies, and port numbers are validated before use.
+- **SSE log stream** — `GET /api/log/stream` (setup UI only) requires `?token=<token>` as a query parameter since `EventSource` cannot send custom headers.
 - **WSJT-X UDP** — the UDP listener binds to `127.0.0.1` by default (loopback-only). Set `wsjtxRelay.udpBindAddress: "0.0.0.0"` if WSJT-X runs on a separate machine and multicast is not an option.
 
 ---
