@@ -1479,7 +1479,15 @@ function createServer(registry, version) {
     if (!req.headers.accept || !req.headers.accept.includes('text/html')) {
       return res.json({ status: 'ok', connected: state.connected, version });
     }
-    res.send(buildSetupHtml(version));
+    const html = buildSetupHtml(version);
+    // Flip tokenDisplayed immediately after building the HTML (which captured
+    // it as false). Any subsequent page load — same browser, different browser,
+    // LAN visitor — gets __FIRST_RUN__ = false and __INITIAL_TOKEN__ = null.
+    if (!config.tokenDisplayed) {
+      config.tokenDisplayed = true;
+      saveConfig();
+    }
+    res.send(html);
   });
 
   // ─── API: Live console log stream (SSE) ───
