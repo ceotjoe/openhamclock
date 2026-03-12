@@ -875,11 +875,14 @@ function buildSetupHtml(version) {
 
     async function init() {
       try {
+        // Save token before GET /api/config overwrites currentConfig — apiToken
+        // is intentionally omitted from that response for security.
+        const savedToken = currentConfig?.apiToken;
         const [cfgRes, logRes] = await Promise.all([fetch('/api/config'), fetch('/api/logging')]);
         currentConfig = await cfgRes.json();
+        if (savedToken) currentConfig.apiToken = savedToken; // restore after overwrite
         const logData = await logRes.json();
-        // Load token first so authHeaders() works for all subsequent calls.
-        await loadTokenDisplay();
+        populateTokenDisplay();
         populateForm(currentConfig);
         populateIntegrations(currentConfig);
         setLoggingBtn(logData.logging !== false); // default true
@@ -893,24 +896,18 @@ function buildSetupHtml(version) {
     }
 
     // ── Security token UI ─────────────────────────────────────────────────
-    async function loadTokenDisplay() {
-      try {
-        const res = await fetch('/api/token');
-        if (!res.ok) return;
-        const data = await res.json();
-        // Patch token into currentConfig so authHeaders() can use it immediately.
-        if (currentConfig) currentConfig.apiToken = data.apiToken || '';
-        const input = document.getElementById('token-display');
-        const badge = document.getElementById('auth-badge');
-        if (!input) return;
-        if (data.apiToken) {
-          input.value = data.apiToken;
-          if (badge) { badge.textContent = 'Auth enabled'; badge.style.color = '#22c55e'; }
-        } else {
-          input.value = '(no token — auth disabled)';
-          if (badge) { badge.textContent = 'Auth disabled'; badge.style.color = '#f59e0b'; badge.style.background = '#f59e0b22'; badge.style.borderColor = '#f59e0b44'; }
-        }
-      } catch (e) {}
+    // Synchronous — reads from currentConfig (token saved across init() overwrite).
+    function populateTokenDisplay() {
+      const input = document.getElementById('token-display');
+      const badge = document.getElementById('auth-badge');
+      if (!input) return;
+      if (currentConfig?.apiToken) {
+        input.value = currentConfig.apiToken;
+        if (badge) { badge.textContent = 'Auth enabled'; badge.style.color = '#22c55e'; }
+      } else {
+        input.value = '(no token — auth disabled)';
+        if (badge) { badge.textContent = 'Auth disabled'; badge.style.color = '#f59e0b'; badge.style.background = '#f59e0b22'; badge.style.borderColor = '#f59e0b44'; }
+      }
     }
 
     async function copyToken() {
@@ -1278,6 +1275,7 @@ function buildSetupHtml(version) {
     // __FIRST_RUN__ is injected server-side: true when the token has never been
     // shown before (new install, upgrade, or token regeneration).
     window.__FIRST_RUN__ = ${!config.tokenDisplayed};
+    window.__INITIAL_TOKEN__ = ${!config.tokenDisplayed ? JSON.stringify(config.apiToken) : 'null'};
 
     function setLoggedIn(token) {
       if (!currentConfig) currentConfig = {};
@@ -1382,17 +1380,13 @@ function buildSetupHtml(version) {
       }
 
       // 2. First run (or token just regenerated): auto-login and show welcome banner.
-      if (window.__FIRST_RUN__) {
-        try {
-          const res = await fetch('/api/token');
-          const data = await res.json();
-          if (data.apiToken) {
-            try { localStorage.setItem('rigbridge_token', data.apiToken); } catch (_) {} // no-op if storage disabled
-            setLoggedIn(data.apiToken);
-            showFirstRunBanner(data.apiToken);
-            return;
-          }
-        } catch (e) {}
+      // Token is embedded in the page HTML as window.__INITIAL_TOKEN__ — no network
+      // call needed, and GET /api/token is now auth-gated.
+      if (window.__FIRST_RUN__ && window.__INITIAL_TOKEN__) {
+        try { localStorage.setItem('rigbridge_token', window.__INITIAL_TOKEN__); } catch (_) {} // no-op if storage disabled
+        setLoggedIn(window.__INITIAL_TOKEN__);
+        showFirstRunBanner(window.__INITIAL_TOKEN__);
+        return;
       }
 
       // 3. No stored session and not first run — show the login form.
@@ -1576,10 +1570,12 @@ function createServer(registry, version) {
   });
 
   // ─── API: Token management ───
-  // Returns the token for display in the local setup UI. Accessible without auth
-  // because the setup UI must bootstrap itself before it has a token to send.
-  // Protected by localhost-only binding and CORS origin filtering.
-  app.get('/api/token', (req, res) => {
+  // Returns the token for authenticated callers (external tools, scripts).
+  // The setup UI no longer calls this — the first-run token is injected into
+  // the HTML as window.__INITIAL_TOKEN__; subsequent loads restore from
+  // currentConfig (saved across the GET /api/config overwrite in init()).
+  // requireAuth passes through automatically when apiToken is empty (auth disabled).
+  app.get('/api/token', requireAuth, (req, res) => {
     res.json({ tokenSet: !!config.apiToken, apiToken: config.apiToken });
   });
 
