@@ -199,19 +199,19 @@ Edit `rig-bridge-config.json`:
 }
 ```
 
-| Field                | Description                                                                                              | Default                    |
-| -------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `enabled`            | Activate the relay on startup                                                                            | `false`                    |
-| `url`                | OpenHamClock server URL                                                                                  | `https://openhamclock.com` |
-| `key`                | Relay authentication key (from your OHC account)                                                         | —                          |
-| `session`            | Browser session ID for per-user isolation                                                                | —                          |
-| `udpPort`            | UDP port WSJT-X is sending to                                                                            | `2237`                     |
-| `batchInterval`      | How often decoded messages are sent (ms)                                                                 | `2000`                     |
-| `verbose`            | Log every decoded message to the console                                                                 | `false`                    |
-| `multicast`          | Join a UDP multicast group to receive WSJT-X packets                                                     | `false`                    |
-| `multicastGroup`     | Multicast group IP address to join                                                                       | `224.0.0.1`                |
-| `multicastInterface` | Local NIC IP for multi-homed systems; `""` = OS default                                                  | `""`                       |
-| `udpBindAddress`     | UDP bind address. Set to `"0.0.0.0"` if WSJT-X runs on a different machine (unicast, non-multicast only) | `""` (→ `127.0.0.1`)       |
+| Field                | Description                                                                                              | Default              |
+| -------------------- | -------------------------------------------------------------------------------------------------------- | -------------------- |
+| `enabled`            | Activate the relay on startup                                                                            | `false`              |
+| `url`                | OpenHamClock server URL                                                                                  | `""`                 |
+| `key`                | Relay authentication key (from your OHC account)                                                         | —                    |
+| `session`            | Browser session ID for per-user isolation                                                                | —                    |
+| `udpPort`            | UDP port WSJT-X is sending to                                                                            | `2237`               |
+| `batchInterval`      | How often decoded messages are sent (ms)                                                                 | `2000`               |
+| `verbose`            | Log every decoded message to the console                                                                 | `false`              |
+| `multicast`          | Join a UDP multicast group to receive WSJT-X packets                                                     | `false`              |
+| `multicastGroup`     | Multicast group IP address to join                                                                       | `224.0.0.1`          |
+| `multicastInterface` | Local NIC IP for multi-homed systems; `""` = OS default                                                  | `""`                 |
+| `udpBindAddress`     | UDP bind address. Set to `"0.0.0.0"` if WSJT-X runs on a different machine (unicast, non-multicast only) | `""` (→ `127.0.0.1`) |
 
 ### In WSJT-X
 
@@ -255,6 +255,75 @@ Once the bridge is running and showing your frequency:
 4. Set Host URL: `http://localhost:5555`
 5. Paste the **API Token** shown in the **Security** card at `http://localhost:5555` into the **API Token** field
 6. Click any DX spot, POTA, or SOTA to tune your radio!
+
+---
+
+## Configuration Reference
+
+All settings live in `rig-bridge-config.json` in the same folder as the executable. The file is created automatically on first run by copying `rig-bridge-config.example.json`. You can edit it manually or use the setup UI at `http://localhost:5555`.
+
+> **Do not set `apiToken` or `tokenDisplayed` manually** — both are managed automatically by rig-bridge.
+
+### Server settings (top-level)
+
+| Field         | Description                                                                                                                                                                                                                                                                      | Default       |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `port`        | HTTP server port. **Requires a restart to take effect.**                                                                                                                                                                                                                         | `5555`        |
+| `bindAddress` | Address the HTTP server binds to. Set to `"0.0.0.0"` for LAN access (e.g. bridge on a Pi, OHC on a desktop).                                                                                                                                                                     | `"127.0.0.1"` |
+| `corsOrigins` | Extra browser origins allowed to call the API, comma-separated. The built-in whitelist (`openhamclock.com`, `localhost`) is always included. Only needed if OHC runs at a custom domain or on a different machine. Example: `"https://ohc.example.com,http://192.168.1.10:3000"` | `""`          |
+| `debug`       | Log raw CAT traffic (hex/ASCII) to the console. Also enabled at launch with the `--debug` CLI flag.                                                                                                                                                                              | `false`       |
+| `logging`     | Capture console output and stream it to the setup UI log tab. Can be toggled at runtime without a restart.                                                                                                                                                                       | `true`        |
+
+### `radio` section
+
+Common to all radio types:
+
+| Field          | Description                                                                                                                           | Default  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `type`         | Radio plugin. One of: `none` · `yaesu` · `kenwood` · `icom` · `flrig` · `rigctld` · `tci` · `mock`                                    | `"none"` |
+| `pollInterval` | How often to poll the radio for state (ms). Applies to rigctld, flrig, Kenwood, and Icom. Yaesu uses auto-info push and ignores this. | `500`    |
+| `pttEnabled`   | Allow rig-bridge to send PTT commands.                                                                                                | `false`  |
+
+Serial port — USB CAT (`yaesu` · `kenwood` · `icom`):
+
+| Field        | Description                                                                                                      | Default  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- | -------- |
+| `serialPort` | Serial port path — e.g. `"COM3"`, `"/dev/ttyUSB0"`, `"/dev/cu.usbserial-…"`                                      | `""`     |
+| `baudRate`   | CAT baud rate. Must match the radio's setting.                                                                   | `38400`  |
+| `dataBits`   | Serial data bits. Rarely needs changing.                                                                         | `8`      |
+| `stopBits`   | Serial stop bits. Yaesu and many others require `2`.                                                             | `2`      |
+| `parity`     | Serial parity. One of: `none` · `even` · `odd` · `mark` · `space`                                                | `"none"` |
+| `dtr`        | Assert the DTR pin on open. Keeps the CAT level-converter powered. Disable only if it causes hardware conflicts. | `true`   |
+| `rtscts`     | Enable hardware flow control (RTS/CTS). Required for some Yaesu models (FT-991A, FT-710) via certain adapters.   | `false`  |
+
+Icom CI-V (`icom` only):
+
+| Field         | Description                                                                        | Default  |
+| ------------- | ---------------------------------------------------------------------------------- | -------- |
+| `icomAddress` | CI-V address. IC-7300: `0x94` · IC-7610: `0x98` · IC-9700: `0xA2` · IC-705: `0xA4` | `"0x94"` |
+
+rigctld (`rigctld` only) — see also [rigctld Configuration](#rigctld-configuration):
+
+| Field         | Description                                                                      | Default       |
+| ------------- | -------------------------------------------------------------------------------- | ------------- |
+| `rigctldHost` | Host running rigctld.                                                            | `"127.0.0.1"` |
+| `rigctldPort` | rigctld TCP port.                                                                | `4532`        |
+| `fixSplit`    | Send `S 0 VFOA` after each frequency change to prevent Hamlib split-mode glitch. | `false`       |
+
+flrig (`flrig` only):
+
+| Field       | Description         | Default       |
+| ----------- | ------------------- | ------------- |
+| `flrigHost` | Host running flrig. | `"127.0.0.1"` |
+| `flrigPort` | flrig XML-RPC port. | `12345`       |
+
+### `tci` section
+
+See [SDR Radios via TCI](#sdr-radios-via-tci-websocket) for the full `tci.*` reference.
+
+### `wsjtxRelay` section
+
+See [WSJT-X Relay](#wsjt-x-relay) for the full `wsjtxRelay.*` reference.
 
 ---
 

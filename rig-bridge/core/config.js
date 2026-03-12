@@ -19,29 +19,34 @@ const DEFAULT_CONFIG = {
   // Auto-generated on first run. Copy from http://localhost:5555 and paste into OHC → Settings →
   // Rig Control → API Token. Empty string disables enforcement (backwards-compatible).
   apiToken: '',
-  debug: false, // Centralized verbose CAT logging flag
+  debug: false, // Verbose CAT logging — also settable via --debug CLI flag
   logging: true, // Enable/disable console log capture & broadcast to UI
   // Tracks whether the auto-generated token has been shown in the setup UI.
   // false → first-run banner shown; true → normal login gate shown.
   tokenDisplayed: false,
   radio: {
     type: 'none', // none | yaesu | kenwood | icom | flrig | rigctld | tci
-    serialPort: '', // COM3, /dev/ttyUSB0, etc.
+    serialPort: '', // COM3, /dev/ttyUSB0, /dev/cu.usbserial-*, etc.
+    // ── Serial line parameters (USB CAT: yaesu / kenwood / icom) ──────────
     baudRate: 38400,
     dataBits: 8,
-    stopBits: 2, // FT-991A and many Yaesu rigs require 2; others work fine with it.
-    parity: 'none',
-    dtr: true, // Assert DTR for level converter power
-    rts: true, // Assert RTS for level converter power
-    rtscts: false, // Hardware flow control — off by default; use manual DTR/RTS instead
-    icomAddress: '0x94', // Default CI-V address for IC-7300
-    pollInterval: 500,
-    pttEnabled: false,
-    // Legacy backend settings
+    stopBits: 2, // FT-991A and many Yaesu rigs require 2; others work fine with it
+    parity: 'none', // none | even | odd | mark | space
+    // ── Hardware signal control ────────────────────────────────────────────
+    dtr: true, // Assert DTR — powers the CAT level-converter; disable if it causes issues
+    rtscts: false, // Hardware flow control — off by default; use dtr for level-converter power
+    // ── Icom CI-V ─────────────────────────────────────────────────────────
+    icomAddress: '0x94', // IC-7300: 0x94 · IC-7610: 0x98 · IC-9700: 0xA2 · IC-705: 0xA4
+    // ── rigctld / Hamlib ──────────────────────────────────────────────────
     rigctldHost: '127.0.0.1',
     rigctldPort: 4532,
+    fixSplit: false, // Send "S 0 VFOA" after each freq change to prevent Hamlib split-mode glitch
+    // ── flrig ─────────────────────────────────────────────────────────────
     flrigHost: '127.0.0.1',
     flrigPort: 12345,
+    // ── Common ────────────────────────────────────────────────────────────
+    pollInterval: 500, // State poll interval in ms (rigctld / flrig / Kenwood / Icom)
+    pttEnabled: false, // Allow rig-bridge to send PTT commands
   },
   tci: {
     host: 'localhost',
