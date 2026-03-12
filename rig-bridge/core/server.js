@@ -1282,12 +1282,14 @@ function buildSetupHtml(version) {
     function setLoggedIn(token) {
       if (!currentConfig) currentConfig = {};
       currentConfig.apiToken = token;
-      document.getElementById('loginOverlay').style.display = 'none';
+      const overlay = document.getElementById('loginOverlay');
+      if (overlay) overlay.style.display = 'none';
       init();
     }
 
     function showLoginForm() {
       const overlay = document.getElementById('loginOverlay');
+      if (!overlay) return;
       overlay.style.display = 'flex';
       setTimeout(() => document.getElementById('loginToken')?.focus(), 50);
     }
@@ -1298,24 +1300,32 @@ function buildSetupHtml(version) {
       const errEl = document.getElementById('loginError');
       const box = document.getElementById('loginBox');
       if (!token) { errEl.textContent = 'Please enter your token.'; return; }
+
+      // Isolate the network request so localStorage/DOM errors don't masquerade
+      // as "connection error" (e.g. Safari private browsing throws SecurityError
+      // on localStorage.setItem, which would otherwise be caught here).
+      let ok = false;
       try {
         const res = await fetch('/api/auth/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token }),
         });
-        if (res.ok) {
-          localStorage.setItem('rigbridge_token', token);
-          errEl.textContent = '';
-          setLoggedIn(token);
-        } else {
-          errEl.textContent = 'Invalid token — try again.';
-          box.classList.remove('shake');
-          void box.offsetWidth; // force reflow to restart animation
-          box.classList.add('shake');
-        }
+        ok = res.ok;
       } catch (e) {
-        errEl.textContent = 'Connection error.';
+        errEl.textContent = 'Connection error — ' + (e.message || 'check that rig-bridge is running');
+        return;
+      }
+
+      if (ok) {
+        errEl.textContent = '';
+        try { localStorage.setItem('rigbridge_token', token); } catch (_) {} // no-op if storage disabled
+        setLoggedIn(token);
+      } else {
+        errEl.textContent = 'Invalid token — try again.';
+        box.classList.remove('shake');
+        void box.offsetWidth; // force reflow to restart animation
+        box.classList.add('shake');
       }
     }
 
@@ -1377,7 +1387,7 @@ function buildSetupHtml(version) {
           const res = await fetch('/api/token');
           const data = await res.json();
           if (data.apiToken) {
-            localStorage.setItem('rigbridge_token', data.apiToken);
+            try { localStorage.setItem('rigbridge_token', data.apiToken); } catch (_) {} // no-op if storage disabled
             setLoggedIn(data.apiToken);
             showFirstRunBanner(data.apiToken);
             return;
