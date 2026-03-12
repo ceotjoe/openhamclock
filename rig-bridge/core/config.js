@@ -21,6 +21,9 @@ const DEFAULT_CONFIG = {
   apiToken: '',
   debug: false, // Centralized verbose CAT logging flag
   logging: true, // Enable/disable console log capture & broadcast to UI
+  // Tracks whether the auto-generated token has been shown in the setup UI.
+  // false → first-run banner shown; true → normal login gate shown.
+  tokenDisplayed: false,
   radio: {
     type: 'none', // none | yaesu | kenwood | icom | flrig | rigctld | tci
     serialPort: '', // COM3, /dev/ttyUSB0, etc.
@@ -100,6 +103,7 @@ function loadConfig() {
   // remain unenforced until they explicitly copy the token to OpenHamClock.
   if (!config.apiToken) {
     config.apiToken = crypto.randomBytes(16).toString('hex');
+    config.tokenDisplayed = false; // always show first-run banner for a new token
     saveConfig();
     console.log('[Config] Generated new API token — copy it from http://localhost:5555');
   }

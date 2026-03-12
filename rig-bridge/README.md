@@ -320,6 +320,42 @@ Find your token at `http://localhost:5555` (Security card). Auth is only enforce
 
 **† `/api/log/stream`:** `EventSource` cannot send custom headers. Pass the token as a query parameter instead: `/api/log/stream?token=<token>`.
 
+## Setup UI Access
+
+The setup page at `http://localhost:5555` is protected by a login gate. You need your API token to access it.
+
+### First run / new install
+
+On first start, rig-bridge auto-generates an API token and opens the setup page directly — no login required. A welcome banner displays your token:
+
+1. Click **📋 Copy** to copy the token
+2. Paste it into **OpenHamClock → Settings → Rig Control → API Token**
+3. Click **Dismiss** — the login gate activates for all future visits
+
+The token is also printed to the terminal on startup and stored in `rig-bridge-config.json`.
+
+### Returning visits
+
+The browser stores the token in `localStorage` after first login. Subsequent visits authenticate silently — the setup page loads without a login prompt.
+
+### Logging in on a new browser
+
+Enter your API token from one of these sources:
+
+- Terminal output from when rig-bridge last started
+- `rig-bridge-config.json` → `"apiToken"` field
+- The **Security** card on the setup page (if logged in on another browser)
+
+### Token regeneration
+
+When you regenerate the token via the Security card, the welcome banner reappears with the new token. The old stored session is immediately invalidated.
+
+### Upgrading from a version without a token
+
+On first start after upgrade, a new token is generated and the welcome banner is shown — same experience as a fresh install.
+
+---
+
 ## Security
 
 rig-bridge is designed to run locally and defaults to a secure configuration:

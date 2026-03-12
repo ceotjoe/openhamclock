@@ -248,6 +248,75 @@ function buildSetupHtml(version) {
     .tci-opts.show { display: block; }
     .rigctld-opts { display: none; }
     .rigctld-opts.show { display: block; }
+
+    /* ── Login gate ── */
+    .login-overlay {
+      position: fixed; inset: 0; background: #0a0e14;
+      display: none; align-items: center; justify-content: center;
+      z-index: 9999; padding: 20px;
+    }
+    .login-box {
+      background: #111620; border: 1px solid #1e2530;
+      border-radius: 12px; padding: 32px; width: 100%; max-width: 400px;
+      text-align: center;
+    }
+    .login-box h2 { color: #00ffcc; font-size: 20px; margin-bottom: 8px; }
+    .login-sub { color: #6b7280; font-size: 13px; margin-bottom: 24px; }
+    .login-input-row { position: relative; margin-bottom: 8px; }
+    .login-input-row input {
+      width: 100%; padding: 10px 42px 10px 12px;
+      background: #0a0e14; border: 1px solid #2a3040; border-radius: 6px;
+      color: #e2e8f0; font-size: 14px; font-family: monospace;
+      outline: none; transition: border-color 0.2s; margin-bottom: 0;
+    }
+    .login-input-row input:focus { border-color: #00ffcc; }
+    .login-eye {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: #6b7280; cursor: pointer; font-size: 16px;
+    }
+    .login-error { color: #f87171; font-size: 12px; min-height: 18px; margin-bottom: 12px; text-align: left; }
+    .login-hint {
+      margin-top: 20px; font-size: 11px; color: #4b5563; text-align: left;
+      border-top: 1px solid #1e2530; padding-top: 14px; line-height: 1.7;
+    }
+    .login-hint strong { color: #6b7280; }
+    .login-hint code { background: #1a1f2a; padding: 1px 5px; border-radius: 3px; color: #f59e0b; font-family: monospace; }
+    @keyframes loginShake {
+      0%,100% { transform: translateX(0); }
+      20%,60% { transform: translateX(-6px); }
+      40%,80% { transform: translateX(6px); }
+    }
+    .login-box.shake { animation: loginShake 0.4s ease; }
+
+    /* ── Welcome banner ── */
+    .welcome-banner {
+      background: #0f1923; border: 1px solid #00ffcc44;
+      border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; display: none;
+    }
+    .welcome-banner.show { display: block; }
+    .wb-title { color: #00ffcc; font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+    .wb-sub { color: #8b95a5; font-size: 12px; margin-bottom: 12px; line-height: 1.5; }
+    .welcome-token-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .welcome-token-row input {
+      flex: 1; background: #0a0e14; border: 1px solid #2a3040;
+      border-radius: 6px; color: #00ffcc; font-family: monospace;
+      font-size: 12px; padding: 8px 10px; outline: none; margin-bottom: 0;
+    }
+    .welcome-token-row .btn { width: auto; padding: 8px 14px; font-size: 12px; }
+    .wb-dismiss {
+      font-size: 12px; color: #6b7280; cursor: pointer;
+      background: none; border: none; padding: 0; text-decoration: underline;
+    }
+    .wb-dismiss:hover { color: #c4c9d4; }
+
+    /* ── Logout link ── */
+    .logout-link {
+      font-size: 11px; color: #4b5563; cursor: pointer;
+      background: none; border: none; padding: 0; text-decoration: underline;
+      display: inline-block; margin-top: 4px;
+    }
+    .logout-link:hover { color: #9ca3af; }
+
     .ohc-instructions {
       background: #0f1923;
       border: 1px dashed #2a3040;
@@ -359,10 +428,46 @@ function buildSetupHtml(version) {
   </style>
 </head>
 <body>
+
+  <!-- Login gate — shown when no valid session is stored in localStorage -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-box" id="loginBox">
+      <h2>🔐 rig-bridge Setup</h2>
+      <div class="login-sub">Enter your API token to continue</div>
+      <div class="login-input-row">
+        <input type="password" id="loginToken" placeholder="Paste your API token…"
+               autocomplete="off" onkeydown="if(event.key==='Enter')doLogin()">
+        <button class="login-eye" id="loginEye" onclick="toggleLoginEye()" title="Show/hide">👁</button>
+      </div>
+      <div class="login-error" id="loginError"></div>
+      <button class="btn btn-primary" onclick="doLogin()">Unlock Setup</button>
+      <div class="login-hint">
+        <strong>First time?</strong> Find your token in:<br>
+        • Terminal output when rig-bridge started<br>
+        • <code>rig-bridge-config.json</code> → <code>"apiToken"</code> field
+      </div>
+    </div>
+  </div>
+
   <div class="container">
+    <!-- First-run / token-regenerated welcome banner -->
+    <div class="welcome-banner" id="welcomeBanner">
+      <div class="wb-title">🎉 Welcome to rig-bridge!</div>
+      <div class="wb-sub">
+        Your API token has been generated. Copy it and paste it into<br>
+        <strong>OpenHamClock → Settings → Rig Control → API Token</strong>
+      </div>
+      <div class="welcome-token-row">
+        <input type="text" id="welcomeToken" readonly>
+        <button class="btn btn-secondary" onclick="copyWelcomeToken()">📋 Copy</button>
+      </div>
+      <button class="wb-dismiss" onclick="dismissWelcomeBanner()">Dismiss</button>
+    </div>
+
     <div class="header">
       <h1>📻 OpenHamClock Rig Bridge</h1>
       <div class="subtitle">Direct USB connection to your radio — no flrig or rigctld needed</div>
+      <button class="logout-link" onclick="logout()" title="Clear saved session and show login screen">Logout</button>
     </div>
 
     <!-- Live Status -->
@@ -1169,7 +1274,122 @@ function buildSetupHtml(version) {
       connect();
     }
 
-    init();
+    // ── Login gate ────────────────────────────────────────────────────────────
+    // __FIRST_RUN__ is injected server-side: true when the token has never been
+    // shown before (new install, upgrade, or token regeneration).
+    window.__FIRST_RUN__ = ${!config.tokenDisplayed};
+
+    function setLoggedIn(token) {
+      if (!currentConfig) currentConfig = {};
+      currentConfig.apiToken = token;
+      document.getElementById('loginOverlay').style.display = 'none';
+      init();
+    }
+
+    function showLoginForm() {
+      const overlay = document.getElementById('loginOverlay');
+      overlay.style.display = 'flex';
+      setTimeout(() => document.getElementById('loginToken')?.focus(), 50);
+    }
+
+    async function doLogin() {
+      const input = document.getElementById('loginToken');
+      const token = input?.value?.trim();
+      const errEl = document.getElementById('loginError');
+      const box = document.getElementById('loginBox');
+      if (!token) { errEl.textContent = 'Please enter your token.'; return; }
+      try {
+        const res = await fetch('/api/auth/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        if (res.ok) {
+          localStorage.setItem('rigbridge_token', token);
+          errEl.textContent = '';
+          setLoggedIn(token);
+        } else {
+          errEl.textContent = 'Invalid token — try again.';
+          box.classList.remove('shake');
+          void box.offsetWidth; // force reflow to restart animation
+          box.classList.add('shake');
+        }
+      } catch (e) {
+        errEl.textContent = 'Connection error.';
+      }
+    }
+
+    function toggleLoginEye() {
+      const inp = document.getElementById('loginToken');
+      const eye = document.getElementById('loginEye');
+      if (!inp) return;
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+      eye.textContent = inp.type === 'password' ? '👁' : '🙈';
+    }
+
+    function showFirstRunBanner(token) {
+      const banner = document.getElementById('welcomeBanner');
+      const tokenInput = document.getElementById('welcomeToken');
+      if (!banner || !tokenInput) return;
+      tokenInput.value = token;
+      banner.classList.add('show');
+    }
+
+    async function copyWelcomeToken() {
+      const val = document.getElementById('welcomeToken')?.value;
+      if (!val) return;
+      try {
+        await navigator.clipboard.writeText(val);
+        showToast('Token copied to clipboard!', 'success');
+      } catch (e) {
+        showToast('Copy failed — select and copy manually', 'error');
+      }
+    }
+
+    async function dismissWelcomeBanner() {
+      document.getElementById('welcomeBanner')?.classList.remove('show');
+      try { await fetch('/api/setup/token-seen', { method: 'POST' }); } catch (e) {}
+    }
+
+    function logout() {
+      localStorage.removeItem('rigbridge_token');
+      location.reload();
+    }
+
+    async function doAutoLogin() {
+      // 1. Try stored token from a previous session.
+      const stored = localStorage.getItem('rigbridge_token');
+      if (stored) {
+        try {
+          const res = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: stored }),
+          });
+          if (res.ok) { setLoggedIn(stored); return; }
+        } catch (e) {}
+        localStorage.removeItem('rigbridge_token'); // stale / token changed
+      }
+
+      // 2. First run (or token just regenerated): auto-login and show welcome banner.
+      if (window.__FIRST_RUN__) {
+        try {
+          const res = await fetch('/api/token');
+          const data = await res.json();
+          if (data.apiToken) {
+            localStorage.setItem('rigbridge_token', data.apiToken);
+            setLoggedIn(data.apiToken);
+            showFirstRunBanner(data.apiToken);
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // 3. No stored session and not first run — show the login form.
+      showLoginForm();
+    }
+
+    doAutoLogin();
   </script>
 </body>
 </html>`;
@@ -1356,9 +1576,30 @@ function createServer(registry, version) {
   // Regenerate token — requires the current token to prevent CSRF.
   app.post('/api/token/regenerate', rateLimit(3, 60000), requireAuth, (req, res) => {
     config.apiToken = require('crypto').randomBytes(16).toString('hex');
+    config.tokenDisplayed = false; // trigger first-run banner for the new token
     saveConfig();
     console.log('[Server] API token regenerated');
     res.json({ success: true, apiToken: config.apiToken });
+  });
+
+  // ─── API: Auth verify (login gate) ───
+  // Validates a token submitted from the setup UI login form. No requireAuth
+  // middleware — this endpoint IS the authentication step.
+  app.post('/api/auth/verify', (req, res) => {
+    const { token } = req.body || {};
+    if (!config.apiToken || token === config.apiToken) return res.json({ success: true });
+    res.status(401).json({ success: false });
+  });
+
+  // ─── API: Mark token as seen ───
+  // Called when the user dismisses the first-run welcome banner. No auth
+  // required — it is called during first-run auto-login before the user has
+  // a stored session. Sets tokenDisplayed = true so the normal login gate is
+  // shown on subsequent visits.
+  app.post('/api/setup/token-seen', (req, res) => {
+    config.tokenDisplayed = true;
+    saveConfig();
+    res.json({ ok: true });
   });
 
   app.post('/api/config', rateLimit(10, 60000), requireAuth, (req, res) => {
