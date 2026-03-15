@@ -6,21 +6,92 @@
  */
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 const fetch = require('node-fetch');
 
 module.exports = function meshtasticRoutes(app, ctx) {
   const { logDebug, logInfo, logWarn, logErrorOnce, requireWriteAuth, writeLimiter, ROOT_DIR } = ctx;
 
-  // ── Persisted config (UI-configurable, survives restarts) ──
+  // ── Constants ──
   const CONFIG_FILE = path.join(ROOT_DIR, 'data', 'meshtastic-config.json');
+  const MIN_POLL_MS = 5000;
+  const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes max
+
+  // ── SSRF protection: validate and sanitize device host URLs ──
+  // Meshtastic devices live on the local network. We allow private/loopback
+  // IPs and .local/.lan hostnames, but block public IPs, metadata endpoints,
+  // and non-http schemes to prevent this endpoint from being used as an SSRF gadget.
+
+  function validateDeviceHost(raw) {
+    if (!raw || typeof raw !== 'string') return { ok: false, error: 'Host is required' };
+
+    // Strip trailing slashes without a vulnerable regex — just trim the end
+    let trimmed = raw.trim();
+    while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
+
+    // Parse with URL constructor
+    let parsed;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      return { ok: false, error: 'Host must be a valid URL (e.g. http://meshtastic.local)' };
+    }
+
+    // Enforce http/https only
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { ok: false, error: 'Host must use http or https' };
+    }
+
+    const hostname = parsed.hostname;
+
+    // Block known dangerous endpoints
+    if (hostname === '169.254.169.254' || hostname === 'metadata.google.internal') {
+      return { ok: false, error: 'Cloud metadata endpoints are not allowed' };
+    }
+
+    // If it's an IP address, only allow private/loopback ranges
+    if (net.isIP(hostname)) {
+      const parts = hostname.split('.').map(Number);
+      if (parts.length === 4) {
+        const [o1, o2] = parts;
+        const isPrivate =
+          o1 === 127 || // loopback
+          o1 === 10 || // 10.0.0.0/8
+          (o1 === 172 && o2 >= 16 && o2 <= 31) || // 172.16.0.0/12
+          (o1 === 192 && o2 === 168); // 192.168.0.0/16
+        if (!isPrivate) {
+          return { ok: false, error: 'Only private/local network IP addresses are allowed for Meshtastic devices' };
+        }
+      } else {
+        // IPv6 — block unless loopback
+        if (hostname !== '::1') {
+          return { ok: false, error: 'Only IPv4 private addresses or ::1 are allowed' };
+        }
+      }
+    }
+
+    // Use the parsed origin (scheme + host + port) as the canonical URL
+    // This normalizes the input and prevents path traversal
+    return { ok: true, host: parsed.origin };
+  }
+
+  function clampPollMs(value) {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return 10000;
+    return Math.min(Math.max(MIN_POLL_MS, parsed), MAX_POLL_MS);
+  }
+
+  // ── Persisted config ──
 
   function loadConfig() {
     // .env takes highest priority
     if (process.env.MESHTASTIC_ENABLED === 'true') {
+      const envHost = process.env.MESHTASTIC_HOST || 'http://meshtastic.local';
+      const validated = validateDeviceHost(envHost);
       return {
         enabled: true,
-        host: (process.env.MESHTASTIC_HOST || 'http://meshtastic.local').replace(/\/+$/, ''),
-        pollMs: parseInt(process.env.MESHTASTIC_POLL_MS || '10000', 10),
+        host: validated.ok ? validated.host : envHost.replace(/\/+$/, ''),
+        pollMs: clampPollMs(process.env.MESHTASTIC_POLL_MS || '10000'),
         source: 'env',
       };
     }
@@ -29,7 +100,12 @@ module.exports = function meshtasticRoutes(app, ctx) {
       if (fs.existsSync(CONFIG_FILE)) {
         const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
         if (data.enabled && data.host) {
-          return { ...data, host: data.host.replace(/\/+$/, ''), source: 'saved' };
+          const validated = validateDeviceHost(data.host);
+          if (!validated.ok) {
+            logWarn(`[Meshtastic] Saved host rejected: ${validated.error}`);
+            return { enabled: false, host: '', pollMs: 10000, source: 'none' };
+          }
+          return { enabled: true, host: validated.host, pollMs: clampPollMs(data.pollMs), source: 'saved' };
         }
         return { ...data, source: 'saved' };
       }
@@ -105,7 +181,7 @@ module.exports = function meshtasticRoutes(app, ctx) {
     }
   }
 
-  // ── Device communication ──
+  // ── Device communication (all use validated config.host) ──
 
   async function fetchNodes() {
     try {
@@ -183,10 +259,9 @@ module.exports = function meshtasticRoutes(app, ctx) {
     stopPolling();
     if (!config.enabled || !config.host) return;
 
-    const interval = Math.max(5000, config.pollMs || 10000);
+    const interval = clampPollMs(config.pollMs);
     logInfo(`[Meshtastic] Starting — polling ${config.host} every ${interval}ms`);
 
-    // Initial fetch
     setTimeout(async () => {
       await fetchDeviceInfo();
       await fetchNodes();
@@ -217,7 +292,6 @@ module.exports = function meshtasticRoutes(app, ctx) {
 
   // ── API Endpoints ──
 
-  // GET /api/meshtastic/status
   app.get('/api/meshtastic/status', (req, res) => {
     res.json({
       enabled: config.enabled,
@@ -233,7 +307,6 @@ module.exports = function meshtasticRoutes(app, ctx) {
     });
   });
 
-  // GET /api/meshtastic/nodes
   app.get('/api/meshtastic/nodes', (req, res) => {
     const nodes = [...state.nodes.values()].map((n) => ({
       num: n.num,
@@ -254,14 +327,12 @@ module.exports = function meshtasticRoutes(app, ctx) {
     res.json({ connected: state.connected, nodes, timestamp: Date.now() });
   });
 
-  // GET /api/meshtastic/messages
   app.get('/api/meshtastic/messages', (req, res) => {
     const since = parseInt(req.query.since) || 0;
     const messages = since ? state.messages.filter((m) => m.timestamp > since) : state.messages;
     res.json({ connected: state.connected, messages: messages.slice(-100), timestamp: Date.now() });
   });
 
-  // POST /api/meshtastic/send
   app.post('/api/meshtastic/send', writeLimiter, requireWriteAuth, async (req, res) => {
     if (!config.enabled || !state.connected) {
       return res.status(503).json({ error: 'Meshtastic not connected' });
@@ -299,16 +370,18 @@ module.exports = function meshtasticRoutes(app, ctx) {
   app.post('/api/meshtastic/configure', writeLimiter, requireWriteAuth, async (req, res) => {
     const { enabled, host, pollMs } = req.body || {};
 
-    // Validate host URL
+    // Enable with host
     if (enabled && host) {
-      const trimmed = host.trim().replace(/\/+$/, '');
-      if (!/^https?:\/\/.+/.test(trimmed)) {
-        return res.status(400).json({ error: 'Host must be a valid URL (e.g. http://meshtastic.local)' });
+      // Validate and sanitize the host URL (SSRF protection)
+      const validated = validateDeviceHost(host);
+      if (!validated.ok) {
+        return res.status(400).json({ error: validated.error });
       }
+      const safeHost = validated.host;
 
       // Test connection before saving
       try {
-        const testRes = await fetch(`${trimmed}/api/v1/nodes`, {
+        const testRes = await fetch(`${safeHost}/api/v1/nodes`, {
           headers: { Accept: 'application/json' },
           signal: AbortSignal.timeout(5000),
         });
@@ -317,17 +390,13 @@ module.exports = function meshtasticRoutes(app, ctx) {
         }
       } catch (e) {
         return res.status(502).json({
-          error: `Cannot reach ${trimmed} — ${e.message}. Make sure the device is on and the address is correct.`,
+          error: `Cannot reach ${safeHost} — ${e.message}. Make sure the device is on and the address is correct.`,
         });
       }
 
       // Save and start
-      config = {
-        enabled: true,
-        host: trimmed,
-        pollMs: Math.max(5000, parseInt(pollMs) || 10000),
-        source: 'saved',
-      };
+      const safePollMs = clampPollMs(pollMs);
+      config = { enabled: true, host: safeHost, pollMs: safePollMs, source: 'saved' };
       saveConfig({ enabled: config.enabled, host: config.host, pollMs: config.pollMs });
       state.nodes.clear();
       state.messages = [];
