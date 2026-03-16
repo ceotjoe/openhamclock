@@ -2,10 +2,13 @@
  * Meshtastic Routes
  * Three connection modes:
  *   1. "direct"  — Browser connects to device on LAN (no server involvement)
- *   2. "mqtt"    — Server subscribes to Meshtastic MQTT broker for remote access
- *   3. "proxy"   — Server proxies to device HTTP API on the local network
+ *   2. "mqtt"    — Server subscribes to Meshtastic MQTT broker (per-user sessions)
+ *   3. "proxy"   — Server proxies to device HTTP API on the local network (shared)
  *
- * Config persists to data/meshtastic-config.json or via .env.
+ * MQTT mode is per-user: each browser gets its own MQTT connection via a session ID.
+ * Proxy and direct modes are shared/global since they use the server's local device.
+ *
+ * Config persists to data/meshtastic-config.json or via .env (proxy/direct only).
  */
 const fs = require('fs');
 const path = require('path');
@@ -20,6 +23,9 @@ module.exports = function meshtasticRoutes(app, ctx) {
   const CONFIG_FILE = path.join(ROOT_DIR, 'data', 'meshtastic-config.json');
   const MIN_POLL_MS = 5000;
   const MAX_POLL_MS = 5 * 60 * 1000;
+  const MAX_MQTT_SESSIONS = 20;
+  const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes idle before cleanup
+  const SESSION_ID_REGEX = /^[a-zA-Z0-9_-]{8,64}$/;
 
   // ── SSRF protection for proxy mode ──
   function validateDeviceHost(raw) {
@@ -60,7 +66,7 @@ module.exports = function meshtasticRoutes(app, ctx) {
     return Math.min(Math.max(MIN_POLL_MS, p), MAX_POLL_MS);
   }
 
-  // ── Config persistence ──
+  // ── Config persistence (for proxy/direct — shared modes) ──
   function loadConfig() {
     if (process.env.MESHTASTIC_ENABLED === 'true') {
       const envHost = process.env.MESHTASTIC_HOST || 'http://meshtastic.local';
@@ -69,10 +75,6 @@ module.exports = function meshtasticRoutes(app, ctx) {
         mode: process.env.MESHTASTIC_MODE || 'proxy',
         enabled: true,
         host: validated.ok ? validated.host : envHost.replace(/\/+$/, ''),
-        mqttBroker: process.env.MESHTASTIC_MQTT_BROKER || '',
-        mqttTopic: process.env.MESHTASTIC_MQTT_TOPIC || 'msh/US/#',
-        mqttUsername: process.env.MESHTASTIC_MQTT_USERNAME || '',
-        mqttPassword: process.env.MESHTASTIC_MQTT_PASSWORD || '',
         pollMs: clampPollMs(process.env.MESHTASTIC_POLL_MS || '10000'),
         source: 'env',
       };
@@ -89,6 +91,10 @@ module.exports = function meshtasticRoutes(app, ctx) {
             }
             data.host = validated.host;
           }
+          // Don't restore MQTT from saved config — MQTT is per-user now
+          if (data.mode === 'mqtt') {
+            return { mode: '', enabled: false, host: '', pollMs: 10000, source: 'none' };
+          }
           return { ...data, pollMs: clampPollMs(data.pollMs), source: 'saved' };
         }
         return { ...data, source: 'saved' };
@@ -96,14 +102,16 @@ module.exports = function meshtasticRoutes(app, ctx) {
     } catch (e) {
       logWarn(`[Meshtastic] Failed to load config: ${e.message}`);
     }
-    return { mode: '', enabled: false, host: '', mqttBroker: '', mqttTopic: 'msh/US/#', pollMs: 10000, source: 'none' };
+    return { mode: '', enabled: false, host: '', pollMs: 10000, source: 'none' };
   }
 
   function saveConfig(cfg) {
     try {
       const dir = path.dirname(CONFIG_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+      // Strip MQTT fields from persisted config — MQTT is per-user
+      const { mqttBroker, mqttTopic, mqttUsername, mqttPassword, ...saveable } = cfg;
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(saveable, null, 2));
       return true;
     } catch (e) {
       logWarn(`[Meshtastic] Failed to save config: ${e.message}`);
@@ -113,7 +121,7 @@ module.exports = function meshtasticRoutes(app, ctx) {
 
   let config = loadConfig();
 
-  // ── Shared state ──
+  // ── Shared state (for proxy/direct modes) ──
   const state = {
     connected: false,
     lastSeen: 0,
@@ -127,9 +135,201 @@ module.exports = function meshtasticRoutes(app, ctx) {
 
   let pollTimer = null;
   let infoTimer = null;
-  let mqttClient = null;
 
-  // ── Node/message parsing (shared by proxy and MQTT) ──
+  // ── Per-user MQTT sessions ──
+  // Each session: { config, state, mqttClient, lastActivity }
+  const mqttSessions = new Map();
+
+  function createMqttState() {
+    return {
+      connected: false,
+      lastSeen: 0,
+      lastError: null,
+      myNodeNum: null,
+      nodes: new Map(),
+      messages: [],
+      maxMessages: 200,
+      deviceInfo: null,
+    };
+  }
+
+  function getSessionId(req) {
+    const id = req.headers['x-mesh-session'] || req.query.meshSession || '';
+    if (!id || !SESSION_ID_REGEX.test(id)) return null;
+    return id;
+  }
+
+  function getMqttSession(sessionId) {
+    const session = mqttSessions.get(sessionId);
+    if (session) session.lastActivity = Date.now();
+    return session || null;
+  }
+
+  function mqttSessionConnect(sessionId, sessionConfig) {
+    // Disconnect existing session if any
+    mqttSessionDisconnect(sessionId);
+
+    if (mqttSessions.size >= MAX_MQTT_SESSIONS) {
+      return { ok: false, error: `Too many active MQTT sessions (max ${MAX_MQTT_SESSIONS}). Try again later.` };
+    }
+
+    const broker = sessionConfig.mqttBroker;
+    const topic = sessionConfig.mqttTopic || 'msh/#';
+    if (!broker) return { ok: false, error: 'MQTT broker URL is required' };
+
+    const sessionState = createMqttState();
+    const clientId = `ohc_mesh_${Math.random().toString(16).substr(2, 8)}`;
+
+    logInfo(`[Meshtastic MQTT] Session ${sessionId.slice(0, 8)}… connecting to ${broker} topic ${topic}`);
+
+    const opts = {
+      clientId,
+      clean: true,
+      connectTimeout: 15000,
+      reconnectPeriod: 30000,
+      keepalive: 60,
+    };
+    if (sessionConfig.mqttUsername) {
+      opts.username = sessionConfig.mqttUsername;
+      opts.password = sessionConfig.mqttPassword || '';
+    }
+
+    const client = mqttLib.connect(broker, opts);
+
+    const session = {
+      config: sessionConfig,
+      state: sessionState,
+      mqttClient: client,
+      lastActivity: Date.now(),
+    };
+    mqttSessions.set(sessionId, session);
+
+    // ── Per-session node/message parsing ──
+    function parseNodeInfo(packet) {
+      if (!packet?.user && !packet?.position) return null;
+      const num = packet.num || packet.nodeNum;
+      if (!num) return null;
+      const existing = sessionState.nodes.get(num) || {};
+      const node = {
+        ...existing,
+        num,
+        id: packet.user?.id || existing.id || `!${num.toString(16)}`,
+        longName: packet.user?.longName || existing.longName || '',
+        shortName: packet.user?.shortName || existing.shortName || '',
+        hwModel: packet.user?.hwModel || existing.hwModel || '',
+        lat:
+          packet.position?.latitudeI != null
+            ? packet.position.latitudeI / 1e7
+            : (packet.position?.latitude ?? existing.lat ?? null),
+        lon:
+          packet.position?.longitudeI != null
+            ? packet.position.longitudeI / 1e7
+            : (packet.position?.longitude ?? existing.lon ?? null),
+        alt: packet.position?.altitude ?? existing.alt ?? null,
+        batteryLevel: packet.deviceMetrics?.batteryLevel ?? existing.batteryLevel ?? null,
+        voltage: packet.deviceMetrics?.voltage ?? existing.voltage ?? null,
+        snr: packet.snr ?? existing.snr ?? null,
+        lastHeard: packet.lastHeard
+          ? packet.lastHeard * 1000
+          : packet.timestamp
+            ? packet.timestamp * 1000
+            : existing.lastHeard || Date.now(),
+        hopsAway: packet.hopsAway ?? existing.hopsAway ?? null,
+      };
+      sessionState.nodes.set(num, node);
+      return node;
+    }
+
+    function addMessage(msg) {
+      if (msg.id && sessionState.messages.some((m) => m.id === msg.id)) return;
+      sessionState.messages.push(msg);
+      if (sessionState.messages.length > sessionState.maxMessages) {
+        sessionState.messages = sessionState.messages.slice(-sessionState.maxMessages);
+      }
+    }
+
+    client.on('connect', () => {
+      sessionState.connected = true;
+      sessionState.lastError = null;
+      logInfo(`[Meshtastic MQTT] Session ${sessionId.slice(0, 8)}… connected to ${broker}`);
+      client.subscribe(topic, { qos: 0 }, (err) => {
+        if (err) logWarn(`[Meshtastic MQTT] Session ${sessionId.slice(0, 8)}… subscribe error: ${err.message}`);
+        else logInfo(`[Meshtastic MQTT] Session ${sessionId.slice(0, 8)}… subscribed to ${topic}`);
+      });
+    });
+
+    client.on('message', (_topic, payload) => {
+      try {
+        const data = JSON.parse(payload.toString());
+        sessionState.lastSeen = Date.now();
+
+        if (data.type === 'nodeinfo' || data.payload?.user || data.payload?.position) {
+          parseNodeInfo(data.payload || data);
+        } else if (data.type === 'text' || data.payload?.text) {
+          const p = data.payload || data;
+          const fromNode = sessionState.nodes.get(p.from);
+          addMessage({
+            id: data.id || `mqtt-${p.from}-${Date.now()}`,
+            from: p.from,
+            to: p.to,
+            text: p.text || '',
+            timestamp: p.timestamp ? p.timestamp * 1000 : Date.now(),
+            channel: p.channel ?? 0,
+            fromName: fromNode?.longName || fromNode?.shortName || `!${(p.from || 0).toString(16)}`,
+          });
+        } else if (data.type === 'position' && data.payload) {
+          const num = data.from || data.payload.from;
+          if (num) {
+            parseNodeInfo({ num, position: data.payload });
+          }
+        }
+      } catch {
+        // Binary protobuf — can't parse without meshtastic protobuf definitions
+      }
+    });
+
+    client.on('error', (err) => {
+      logErrorOnce(`Meshtastic MQTT ${sessionId.slice(0, 8)}`, err.message);
+      sessionState.lastError = err.message;
+    });
+
+    client.on('close', () => {
+      sessionState.connected = false;
+    });
+
+    return { ok: true };
+  }
+
+  function mqttSessionDisconnect(sessionId) {
+    const session = mqttSessions.get(sessionId);
+    if (!session) return;
+    if (session.mqttClient) {
+      try {
+        session.mqttClient.removeAllListeners();
+        session.mqttClient.on('error', () => {});
+        session.mqttClient.end(true);
+      } catch {}
+    }
+    mqttSessions.delete(sessionId);
+    logInfo(`[Meshtastic MQTT] Session ${sessionId.slice(0, 8)}… disconnected`);
+  }
+
+  // Cleanup stale MQTT sessions every 5 minutes
+  const sessionCleanupTimer = setInterval(
+    () => {
+      const now = Date.now();
+      for (const [id, session] of mqttSessions) {
+        if (now - session.lastActivity > SESSION_TTL_MS) {
+          logInfo(`[Meshtastic MQTT] Cleaning up idle session ${id.slice(0, 8)}…`);
+          mqttSessionDisconnect(id);
+        }
+      }
+    },
+    5 * 60 * 1000,
+  );
+  sessionCleanupTimer.unref();
+
+  // ── Node/message parsing (for proxy mode — shared state) ──
   function parseNodeInfo(packet) {
     if (!packet?.user && !packet?.position) return null;
     const num = packet.num || packet.nodeNum;
@@ -238,108 +438,12 @@ module.exports = function meshtasticRoutes(app, ctx) {
     } catch {}
   }
 
-  // ── MQTT mode: subscribe to Meshtastic MQTT broker ──
-  function mqttConnect() {
-    mqttDisconnect();
-    if (!config.mqttBroker) return;
-
-    const broker = config.mqttBroker;
-    const topic = config.mqttTopic || 'msh/#';
-    const clientId = `ohc_mesh_${Math.random().toString(16).substr(2, 8)}`;
-
-    logInfo(`[Meshtastic MQTT] Connecting to ${broker} topic ${topic}`);
-
-    const opts = {
-      clientId,
-      clean: true,
-      connectTimeout: 15000,
-      reconnectPeriod: 30000,
-      keepalive: 60,
-    };
-    if (config.mqttUsername) {
-      opts.username = config.mqttUsername;
-      opts.password = config.mqttPassword || '';
-    }
-
-    const client = mqttLib.connect(broker, opts);
-    mqttClient = client;
-
-    client.on('connect', () => {
-      state.connected = true;
-      state.lastError = null;
-      logInfo(`[Meshtastic MQTT] Connected to ${broker}`);
-      client.subscribe(topic, { qos: 0 }, (err) => {
-        if (err) logWarn(`[Meshtastic MQTT] Subscribe error: ${err.message}`);
-        else logInfo(`[Meshtastic MQTT] Subscribed to ${topic}`);
-      });
-    });
-
-    client.on('message', (_topic, payload) => {
-      try {
-        const data = JSON.parse(payload.toString());
-        state.lastSeen = Date.now();
-
-        // Meshtastic MQTT JSON format varies — handle common shapes
-        if (data.type === 'nodeinfo' || data.payload?.user || data.payload?.position) {
-          parseNodeInfo(data.payload || data);
-        } else if (data.type === 'text' || data.payload?.text) {
-          const p = data.payload || data;
-          const fromNode = state.nodes.get(p.from);
-          addMessage({
-            id: data.id || `mqtt-${p.from}-${Date.now()}`,
-            from: p.from,
-            to: p.to,
-            text: p.text || '',
-            timestamp: p.timestamp ? p.timestamp * 1000 : Date.now(),
-            channel: p.channel ?? 0,
-            fromName: fromNode?.longName || fromNode?.shortName || `!${(p.from || 0).toString(16)}`,
-          });
-        } else if (data.type === 'position' && data.payload) {
-          // Position-only update
-          const num = data.from || data.payload.from;
-          if (num) {
-            parseNodeInfo({ num, position: data.payload });
-          }
-        }
-      } catch {
-        // Binary protobuf — can't parse without meshtastic protobuf definitions
-        // JSON mode is required for MQTT integration
-      }
-    });
-
-    client.on('error', (err) => {
-      logErrorOnce('Meshtastic MQTT', err.message);
-      state.lastError = err.message;
-    });
-
-    client.on('close', () => {
-      state.connected = false;
-    });
-  }
-
-  function mqttDisconnect() {
-    if (mqttClient) {
-      try {
-        mqttClient.removeAllListeners();
-        mqttClient.on('error', () => {});
-        mqttClient.end(true);
-      } catch {}
-      mqttClient = null;
-    }
-  }
-
-  // ── Polling lifecycle ──
+  // ── Polling lifecycle (proxy/direct only — no global MQTT) ──
   function startPolling() {
     stopPolling();
     if (!config.enabled) return;
 
-    if (config.mode === 'mqtt') {
-      mqttConnect();
-      return;
-    }
-
     if (config.mode === 'direct') {
-      // Direct mode is client-side only — server just stores config
       logInfo('[Meshtastic] Direct (browser) mode — no server polling');
       return;
     }
@@ -372,7 +476,6 @@ module.exports = function meshtasticRoutes(app, ctx) {
       clearInterval(infoTimer);
       infoTimer = null;
     }
-    mqttDisconnect();
   }
 
   function resetState() {
@@ -385,28 +488,49 @@ module.exports = function meshtasticRoutes(app, ctx) {
 
   if (config.enabled) startPolling();
 
+  // ── Helper: resolve the active state/config for a request ──
+  // MQTT requests use per-session state; proxy/direct use shared state.
+  function resolveSession(req) {
+    const sessionId = getSessionId(req);
+    if (sessionId) {
+      const session = getMqttSession(sessionId);
+      if (session) {
+        return {
+          mode: 'mqtt',
+          sessionId,
+          config: session.config,
+          state: session.state,
+          mqttClient: session.mqttClient,
+        };
+      }
+    }
+    return { mode: config.mode, sessionId: null, config, state, mqttClient: null };
+  }
+
   // ── API Endpoints ──
 
   app.get('/api/meshtastic/status', (req, res) => {
+    const s = resolveSession(req);
     res.json({
-      mode: config.mode || 'proxy',
-      enabled: config.enabled,
-      connected: state.connected,
-      lastSeen: state.lastSeen,
-      lastError: state.lastError,
-      host: config.mode === 'proxy' && config.enabled ? config.host : null,
-      mqttBroker: config.mode === 'mqtt' && config.enabled ? config.mqttBroker : null,
-      mqttTopic: config.mode === 'mqtt' ? config.mqttTopic : null,
-      pollMs: config.pollMs,
-      configSource: config.source,
-      nodeCount: state.nodes.size,
-      messageCount: state.messages.length,
-      deviceInfo: state.deviceInfo,
+      mode: s.config.mode || '',
+      enabled: s.config.enabled || false,
+      connected: s.state.connected,
+      lastSeen: s.state.lastSeen,
+      lastError: s.state.lastError,
+      host: s.config.mode === 'proxy' && s.config.enabled ? s.config.host : null,
+      mqttBroker: s.config.mode === 'mqtt' && s.config.enabled ? s.config.mqttBroker : null,
+      mqttTopic: s.config.mode === 'mqtt' ? s.config.mqttTopic : null,
+      pollMs: s.config.pollMs,
+      configSource: s.config.source,
+      nodeCount: s.state.nodes.size,
+      messageCount: s.state.messages.length,
+      deviceInfo: s.state.deviceInfo,
     });
   });
 
   app.get('/api/meshtastic/nodes', (req, res) => {
-    const nodes = [...state.nodes.values()].map((n) => ({
+    const s = resolveSession(req);
+    const nodes = [...s.state.nodes.values()].map((n) => ({
       num: n.num,
       id: n.id,
       longName: n.longName,
@@ -422,29 +546,30 @@ module.exports = function meshtasticRoutes(app, ctx) {
       hwModel: n.hwModel,
       hasPosition: n.lat != null && n.lon != null,
     }));
-    res.json({ connected: state.connected, nodes, timestamp: Date.now() });
+    res.json({ connected: s.state.connected, nodes, timestamp: Date.now() });
   });
 
   app.get('/api/meshtastic/messages', (req, res) => {
+    const s = resolveSession(req);
     const since = parseInt(req.query.since) || 0;
-    const messages = since ? state.messages.filter((m) => m.timestamp > since) : state.messages;
-    res.json({ connected: state.connected, messages: messages.slice(-100), timestamp: Date.now() });
+    const messages = since ? s.state.messages.filter((m) => m.timestamp > since) : s.state.messages;
+    res.json({ connected: s.state.connected, messages: messages.slice(-100), timestamp: Date.now() });
   });
 
   app.post('/api/meshtastic/send', writeLimiter, async (req, res) => {
-    if (!config.enabled || !state.connected) {
+    const s = resolveSession(req);
+    if (!s.config.enabled || !s.state.connected) {
       return res.status(503).json({ error: 'Meshtastic not connected' });
     }
-    if (config.mode === 'direct') {
+    if (s.config.mode === 'direct') {
       return res.status(400).json({ error: 'Direct mode sends from the browser — use the device URL directly' });
     }
     const { text, to, channel } = req.body || {};
     if (!text || typeof text !== 'string' || text.length > 228) {
       return res.status(400).json({ error: 'Text required (max 228 chars)' });
     }
-    if (config.mode === 'mqtt') {
-      // Publish to MQTT
-      if (!mqttClient || !mqttClient.connected) {
+    if (s.config.mode === 'mqtt') {
+      if (!s.mqttClient || !s.mqttClient.connected) {
         return res.status(503).json({ error: 'MQTT not connected' });
       }
       try {
@@ -452,16 +577,23 @@ module.exports = function meshtasticRoutes(app, ctx) {
           type: 'sendtext',
           payload: { text: text.trim(), to: to || 0xffffffff, channel: channel || 0 },
         });
-        mqttClient.publish(config.mqttTopic?.replace(/#$/, '') + 'sendtext', payload, { qos: 0 });
-        addMessage({
+        s.mqttClient.publish(s.config.mqttTopic?.replace(/#$/, '') + 'sendtext', payload, { qos: 0 });
+        // Add to session messages
+        const msg = {
           id: `local-${Date.now()}`,
-          from: state.myNodeNum || 0,
+          from: s.state.myNodeNum || 0,
           to: to || 0xffffffff,
           text: text.trim(),
           timestamp: Date.now(),
           channel: channel || 0,
-          fromName: state.deviceInfo?.longName || 'Me',
-        });
+          fromName: s.state.deviceInfo?.longName || 'Me',
+        };
+        if (msg.id && !s.state.messages.some((m) => m.id === msg.id)) {
+          s.state.messages.push(msg);
+          if (s.state.messages.length > s.state.maxMessages) {
+            s.state.messages = s.state.messages.slice(-s.state.maxMessages);
+          }
+        }
         return res.json({ ok: true });
       } catch (e) {
         return res.status(500).json({ error: `MQTT publish failed: ${e.message}` });
@@ -496,9 +628,16 @@ module.exports = function meshtasticRoutes(app, ctx) {
   // POST /api/meshtastic/configure
   app.post('/api/meshtastic/configure', writeLimiter, async (req, res) => {
     const { enabled, mode, host, mqttBroker, mqttTopic, mqttUsername, mqttPassword, pollMs } = req.body || {};
+    const sessionId = getSessionId(req);
 
     // Disable
     if (enabled === false) {
+      // If this is an MQTT session, disconnect just that session
+      if (sessionId && mqttSessions.has(sessionId)) {
+        mqttSessionDisconnect(sessionId);
+        return res.json({ ok: true, enabled: false, message: 'MQTT session disconnected.' });
+      }
+      // Otherwise disable the shared proxy/direct config
       stopPolling();
       config = { ...config, enabled: false, source: 'saved' };
       resetState();
@@ -512,6 +651,8 @@ module.exports = function meshtasticRoutes(app, ctx) {
 
     // ── Direct mode — just save the config, browser handles everything ──
     if (mode === 'direct') {
+      // Disconnect any MQTT session for this client
+      if (sessionId && mqttSessions.has(sessionId)) mqttSessionDisconnect(sessionId);
       stopPolling();
       config = { mode: 'direct', enabled: true, host: host || '', pollMs: clampPollMs(pollMs), source: 'saved' };
       saveConfig(config);
@@ -524,13 +665,16 @@ module.exports = function meshtasticRoutes(app, ctx) {
       });
     }
 
-    // ── MQTT mode ──
+    // ── MQTT mode — per-user session ──
     if (mode === 'mqtt') {
       if (!mqttBroker) {
         return res.status(400).json({ error: 'MQTT broker URL is required (e.g. mqtt://mqtt.meshtastic.org)' });
       }
-      stopPolling();
-      config = {
+      if (!sessionId) {
+        return res.status(400).json({ error: 'MQTT mode requires a session ID (x-mesh-session header)' });
+      }
+
+      const sessionConfig = {
         mode: 'mqtt',
         enabled: true,
         mqttBroker: mqttBroker.trim(),
@@ -538,12 +682,14 @@ module.exports = function meshtasticRoutes(app, ctx) {
         mqttUsername: (mqttUsername || '').trim(),
         mqttPassword: (mqttPassword || '').trim(),
         pollMs: clampPollMs(pollMs),
-        source: 'saved',
+        source: 'session',
       };
-      saveConfig(config);
-      resetState();
-      startPolling();
-      return res.json({ ok: true, mode: 'mqtt', message: `Connected to MQTT broker ${config.mqttBroker}` });
+
+      const result = mqttSessionConnect(sessionId, sessionConfig);
+      if (!result.ok) {
+        return res.status(503).json({ error: result.error });
+      }
+      return res.json({ ok: true, mode: 'mqtt', message: `Connected to MQTT broker ${sessionConfig.mqttBroker}` });
     }
 
     // ── Proxy mode ──
@@ -551,6 +697,8 @@ module.exports = function meshtasticRoutes(app, ctx) {
       if (!host) {
         return res.status(400).json({ error: 'Device host URL is required' });
       }
+      // Disconnect any MQTT session for this client
+      if (sessionId && mqttSessions.has(sessionId)) mqttSessionDisconnect(sessionId);
       const validated = validateDeviceHost(host);
       if (!validated.ok) {
         return res.status(400).json({ error: validated.error });

@@ -10,6 +10,23 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 const POLL_INTERVAL = 10000;
 const DIRECT_POLL_MS = 10000;
 
+// Per-user MQTT session ID — persisted in localStorage so it survives page reloads
+function getMeshSessionId() {
+  const key = 'openhamclock_mesh_session';
+  let id;
+  try {
+    id = localStorage.getItem(key);
+  } catch {}
+  if (id && /^[a-zA-Z0-9_-]{8,64}$/.test(id)) return id;
+  id = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+  try {
+    localStorage.setItem(key, id);
+  } catch {}
+  return id;
+}
+const meshSessionId = getMeshSessionId();
+const meshHeaders = { 'x-mesh-session': meshSessionId };
+
 function timeAgo(ts) {
   if (!ts) return '';
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -85,7 +102,7 @@ function SetupView({ status, onConnect }) {
       try {
         await fetch('/api/meshtastic/configure', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...meshHeaders },
           body: JSON.stringify({ enabled: true, mode: 'direct', host: host.trim() }),
         });
       } catch {}
@@ -116,7 +133,7 @@ function SetupView({ status, onConnect }) {
           : { enabled: true, mode: 'proxy', host: host.trim() };
       const res = await fetch('/api/meshtastic/configure', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...meshHeaders },
         body: JSON.stringify(body),
       });
       const data = await res.json();
@@ -454,14 +471,14 @@ export default function MeshtasticPanel() {
   // Server polling (for proxy/mqtt modes)
   const fetchServerStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/meshtastic/status');
+      const res = await fetch('/api/meshtastic/status', { headers: meshHeaders });
       if (res.ok) setServerStatus(await res.json());
     } catch {}
   }, []);
 
   const fetchServerNodes = useCallback(async () => {
     try {
-      const res = await fetch('/api/meshtastic/nodes');
+      const res = await fetch('/api/meshtastic/nodes', { headers: meshHeaders });
       if (res.ok) {
         const d = await res.json();
         setServerNodes(d.nodes || []);
@@ -471,7 +488,7 @@ export default function MeshtasticPanel() {
 
   const fetchServerMessages = useCallback(async () => {
     try {
-      const res = await fetch(`/api/meshtastic/messages?since=${serverLastMsgTs.current}`);
+      const res = await fetch(`/api/meshtastic/messages?since=${serverLastMsgTs.current}`, { headers: meshHeaders });
       if (res.ok) {
         const d = await res.json();
         if (d.messages?.length > 0) {
@@ -523,7 +540,7 @@ export default function MeshtasticPanel() {
       } else {
         const res = await fetch('/api/meshtastic/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...meshHeaders },
           body: JSON.stringify({ text: sendText.trim(), to: sendTo?.num || 0xffffffff, channel: sendChannel }),
         });
         if (res.ok) setSendText('');
@@ -536,7 +553,7 @@ export default function MeshtasticPanel() {
     try {
       await fetch('/api/meshtastic/configure', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...meshHeaders },
         body: JSON.stringify({ enabled: false }),
       });
     } catch {}
