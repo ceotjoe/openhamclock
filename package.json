@@ -16,6 +16,8 @@
     "test:ui": "npx vitest --ui",
     "test:run": "npx vitest run",
     "test:coverage": "npx vitest run --coverage",
+    "test:udp-spots": "node scripts/send-udp-spots.js",
+    "test:udp-spots:mixed": "node scripts/send-udp-spots-mixed.js",
     "format": "npx prettier --write .",
     "format:check": "npx prettier --check .",
     "prepare": "husky || true"
