@@ -58,6 +58,20 @@ module.exports = function (app, ctx) {
   //   SO-124 (HADES-R) — FM repeater, active since Feb 2025
   //   SO-125 (HADES-ICM) — FM repeater, active since Jun 2025
   //   QMR-KWT-2 — FM repeater/SSTV, launched Dec 2025, NORAD 67291
+  //   EWS-G1 (GOES-13, 29155) — geostationary, GVAR/SD, 1685.7/1676.0 MHz
+  //   EWS-G2 (GOES-15, 36411) — geostationary, GVAR/SD, 1685.7/1676.0 MHz
+  //   ELEKTRO-L2 (41105) — geostationary, HRIT/LRIT, 1691.0 MHz
+  //   ELEKTRO-L3 (44903) — geostationary, HRIT/LRIT, 1691.0 MHz
+  //   GK-2A (43823) — geostationary, HRIT/LRIT, 1692.14 MHz
+  //   HIMAWARI-9 (41836) — geostationary, HimawariCast, 4148.0 MHz
+  //   NOAA-20 (43013) — polar, HRD X-Band, 7812.0 MHz
+  //   NOAA-21 (54234) — polar, HRD X-Band, 7812.0 MHz
+  //
+  // UPDATED: Frequency data (downlink, uplink, tone, armTone, frequency,
+  //   hrptFrequency, grbFrequency, sdFrequency) merged from satconfig.json
+  //   for all applicable satellites — ISS, SO-50, AO-91, AO-123, SO-125,
+  //   QMR-KWT-2, GOES-18/19, METOP-B/C, METEOR M2-3/4, RS-44, QO-100,
+  //   AO-7, FO-29, JO-97, AO-73, CAS-4A/4B, CAS-6, XW-2A/B/C/F, IO-117
   //
   // FIXED: TEVEL NORAD IDs corrected per AMSAT TLE bulletin
   //
