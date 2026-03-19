@@ -826,6 +826,9 @@ module.exports = function (app, ctx) {
     const hhmm = str.match(/^(\d{2})(\d{2})z?$/i);
     if (hhmm) return parseSpotHHMMzToTimestamp(`${hhmm[1]}:${hhmm[2]}z`, fallbackTs);
 
+    const hhmmss = str.match(/^(\d{2})(\d{2})(\d{2})z?$/i);
+    if (hhmmss) return parseSpotHHMMzToTimestamp(`${hhmmss[1]}:${hhmmss[2]}z`, fallbackTs);
+
     // Some spot feeds emit ISO timestamps without timezone (e.g. 2026-03-17T11:53:00).
     // Treat these as UTC to avoid local-time offset skew in Zulu display and age math.
     const isoNoZone = str.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/);
@@ -854,6 +857,15 @@ module.exports = function (app, ctx) {
       .replace(/-?#$/, '');
   }
 
+  function hasExplicitTimezoneHint(value) {
+    const str = String(value || '').trim();
+    if (!str) return false;
+    if (/z$/i.test(str)) return true;
+    if (/[+-]\d{2}:?\d{2}$/.test(str)) return true;
+    if (/\b(?:utc|gmt)\b/i.test(str)) return true;
+    return false;
+  }
+
   function normalizeUdpSpotCandidate(candidate, fallbackTs = Date.now()) {
     if (!candidate || typeof candidate !== 'object') return null;
 
@@ -862,8 +874,11 @@ module.exports = function (app, ctx) {
     const freqMHz = parseFreqToMHz(candidate.freqMHz ?? candidate.freq ?? candidate.frequency);
     if (!spotter || !dxCall || !Number.isFinite(freqMHz)) return null;
 
-    let timestamp = parseTimestampValue(candidate.timestamp ?? candidate.time, fallbackTs);
-    if (!Number.isFinite(timestamp) || Math.abs(timestamp - fallbackTs) > 12 * 60 * 60 * 1000) {
+    const rawTimestamp = candidate.timestamp ?? candidate.time;
+    let timestamp = parseTimestampValue(rawTimestamp, fallbackTs);
+    // Many local UDP feeds provide timezone-less times; if the parsed value is far off,
+    // use receive time so "minutes ago" and displayed Z time reflect current spots.
+    if (!hasExplicitTimezoneHint(rawTimestamp) && Math.abs(timestamp - fallbackTs) > 2 * 60 * 60 * 1000) {
       timestamp = fallbackTs;
     }
     const comment = String(candidate.comment || candidate.info || candidate.text || candidate.remarks || '').trim();
@@ -916,9 +931,96 @@ module.exports = function (app, ctx) {
       return arr.map((item) => normalizeUdpSpotCandidate(item, fallbackTs)).filter(Boolean);
     } catch {}
 
-    if (text.startsWith('<?xml') || text.startsWith('<spot') || text.startsWith('<RadioInfo')) {
-      const xmlSpot = parseMacLoggerDxXmlSpot(text, fallbackTs);
-      return xmlSpot ? [xmlSpot] : [];
+    if (text.startsWith('<?xml') || text.startsWith('<spot') || text.startsWith('<RadioInfo') || (text.startsWith('<') && text.includes('>'))) {
+      // Try the narrow MacLoggerDX parser first (standard <spottercall>/<dxcall> tags)
+      if (text.startsWith('<?xml') || text.startsWith('<spot') || text.startsWith('<RadioInfo')) {
+        const xmlSpot = parseMacLoggerDxXmlSpot(text, fallbackTs);
+        if (xmlSpot) return [xmlSpot];
+        // <RadioInfo> packets are intentionally not spots — skip generic fallback
+        if (text.startsWith('<RadioInfo')) return [];
+      }
+
+      // Generic XML fallback — handles broader tag name variants (e.g. MLDX <StationName>)
+      const readTag = (tagNames) => {
+        for (const tagName of tagNames) {
+          const escaped = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const m = text.match(new RegExp(`<${escaped}[^>]*>\\s*([^<]+?)\\s*<\\/${escaped}>`, 'i'));
+          if (m && m[1]) return m[1].trim();
+        }
+        return '';
+      };
+
+      const xmlSpot = normalizeUdpSpotCandidate(
+        {
+          spotter: readTag([
+            'spotter',
+            'spottercall',
+            'spottercallsign',
+            'de',
+            'decall',
+            'sourcecall',
+            'sourcecallsign',
+            'stationprefix',
+            'mycall',
+            'operator',
+            'opcall',
+            'sender',
+            'stationname',
+            'station_name',
+            'station',
+          ]),
+          dxCall: readTag(['dxcall', 'call', 'callsign', 'dxcallsign', 'workedcall', 'targetcall']),
+          freq: readTag(['freq', 'frequency', 'frequencykhz', 'freqkhz', 'mhz', 'rxfreq', 'txfreq', 'spotfreq']),
+          comment: readTag(['comment', 'info', 'text', 'remarks', 'message', 'notes']),
+          time: readTag(['time', 'timestamp', 'spottime', 'utc', 'utctime']),
+          dxGrid: readTag(['dxgrid', 'grid', 'gridsquare', 'dxgridsquare']),
+          spotterGrid: readTag(['spottergrid', 'mygrid', 'degrid', 'mygridsquare']),
+        },
+        fallbackTs,
+      );
+
+      if (xmlSpot) return [xmlSpot];
+    }
+
+    // ADIF-style payloads used by some logger integrations
+    // Example fragments: <CALL:5>W1AW <FREQ:6>14.074 <STATION_CALLSIGN:5>K1ABC
+    if (text.includes('<') && text.includes(':') && !text.includes('</')) {
+      const adifFields = {};
+      const adifRegex = /<([A-Z0-9_]+)(?::\d+)?>([^<]*)/gi;
+      let m;
+      while ((m = adifRegex.exec(text)) !== null) {
+        const key = String(m[1] || '').toUpperCase();
+        const val = String(m[2] || '').trim();
+        if (key && val) adifFields[key] = val;
+      }
+
+      if (Object.keys(adifFields).length > 0) {
+        const adifSpot = normalizeUdpSpotCandidate(
+          {
+            spotter:
+              adifFields.STATION_CALLSIGN ||
+              adifFields.OPERATOR ||
+              adifFields.MYCALL ||
+              adifFields.DE ||
+              adifFields.SPOTTER ||
+              '',
+            dxCall: adifFields.DXCALL || adifFields.CALL || adifFields.CALLSIGN || '',
+            freq:
+              adifFields.FREQ ||
+              adifFields.FREQUENCY ||
+              adifFields.RXFREQ ||
+              adifFields.TXFREQ ||
+              adifFields.BAND_RX ||
+              '',
+            comment: adifFields.COMMENT || adifFields.NOTES || adifFields.REMARKS || '',
+            time: adifFields.TIME_ON || adifFields.TIME || adifFields.TIMESTAMP || '',
+            dxGrid: adifFields.GRIDSQUARE || adifFields.MY_GRIDSQUARE || '',
+          },
+          fallbackTs,
+        );
+
+        if (adifSpot) return [adifSpot];
+      }
     }
 
     const dxDe = text.match(/^DX\s+de\s+([A-Z0-9\/-]+)[^:]*:\s*([0-9.]+)\s+([A-Z0-9\/-]+)\s*(.*?)\s*(\d{4}Z?)?\s*$/i);
@@ -974,10 +1076,20 @@ module.exports = function (app, ctx) {
     return false;
   }
 
+  function isBroadcastHost(host) {
+    if (!host || net.isIP(host) !== 4) return false;
+    if (host === '255.255.255.255') return true;
+    const octets = host.split('.');
+    return octets.length === 4 && octets[3] === '255';
+  }
+
   function getOrCreateDxUdpSession(host, port) {
     const normalizedHost = String(host || '').trim();
+    // Directed/global broadcast addresses are destination targets, not sender IDs.
+    // Use wildcard listener session so we don't split packets across duplicate binds.
+    const effectiveHost = isBroadcastHost(normalizedHost) ? '' : normalizedHost;
     const normalizedPort = Number.isFinite(port) ? port : 12060;
-    const key = `${normalizedHost || 'any'}:${normalizedPort}`;
+    const key = `${effectiveHost || 'any'}:${normalizedPort}`;
     const existing = dxUdpSessions.get(key);
     if (existing) {
       existing.lastAccess = Date.now();
@@ -996,22 +1108,48 @@ module.exports = function (app, ctx) {
 
     const session = {
       key,
-      host: normalizedHost,
+      host: effectiveHost,
       port: normalizedPort,
       socket: dgram.createSocket({ type: 'udp4', reuseAddr: true }),
       spots: [],
       started: false,
       lastAccess: Date.now(),
+      packetCount: 0,
+      parsedCount: 0,
+      droppedCount: 0,
+      parseMissCount: 0,
+      lastPacketAt: 0,
+      lastPacketFrom: null,
+      lastPacketPreview: '',
+      lastParseMissPreview: '',
     };
 
     session.socket.on('message', (buf, rinfo) => {
-      if (session.host && !isMulticastHost(session.host) && rinfo?.address && rinfo.address !== session.host) {
+      session.packetCount += 1;
+      session.lastPacketAt = Date.now();
+      session.lastPacketFrom = rinfo?.address ? `${rinfo.address}:${rinfo.port || ''}` : null;
+      session.lastPacketPreview = buf.toString('utf8').replace(/\s+/g, ' ').slice(0, 160);
+
+      if (
+        session.host &&
+        !isMulticastHost(session.host) &&
+        !isBroadcastHost(session.host) &&
+        rinfo?.address &&
+        rinfo.address !== session.host
+      ) {
+        session.droppedCount += 1;
         return;
       }
 
       const now = Date.now();
       const parsed = parseUdpSpotPayload(buf.toString('utf8'), now);
-      if (!parsed.length) return;
+      if (!parsed.length) {
+        session.parseMissCount += 1;
+        session.lastParseMissPreview = session.lastPacketPreview;
+        return;
+      }
+
+      session.parsedCount += parsed.length;
 
       session.spots.push(...parsed);
       session.spots = session.spots
@@ -1039,6 +1177,30 @@ module.exports = function (app, ctx) {
     dxUdpSessions.set(key, session);
     return session;
   }
+
+  app.get('/api/dxcluster/udp-status', (req, res) => {
+    const now = Date.now();
+    const sessions = [...dxUdpSessions.values()].map((s) => ({
+      key: s.key,
+      host: s.host || '',
+      port: s.port,
+      started: !!s.started,
+      activeSpotCount: (s.spots || []).length,
+      packetCount: s.packetCount || 0,
+      parsedCount: s.parsedCount || 0,
+      droppedCount: s.droppedCount || 0,
+      parseMissCount: s.parseMissCount || 0,
+      lastPacketAt: s.lastPacketAt || 0,
+      lastPacketAgeMs: s.lastPacketAt ? now - s.lastPacketAt : null,
+      lastPacketFrom: s.lastPacketFrom || null,
+      lastPacketPreview: s.lastPacketPreview || '',
+      lastParseMissPreview: s.lastParseMissPreview || '',
+      lastAccess: s.lastAccess || 0,
+      lastAccessAgeMs: s.lastAccess ? now - s.lastAccess : null,
+    }));
+
+    res.json({ now, sessionCount: sessions.length, sessions });
+  });
 
   setInterval(() => {
     const now = Date.now();

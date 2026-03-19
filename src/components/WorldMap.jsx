@@ -1164,11 +1164,13 @@ export const WorldMap = ({
       const filteredPaths = filterDXPaths(dxPaths, dxFilters);
 
       filteredPaths.forEach((path) => {
+        const dxCall = String(path.dxCall || '').trim();
+        if (!dxCall) return;
         const band = bandFromAnyFrequency(path.freq);
         if (!bandPassesMapFilter(band)) return;
 
         try {
-          if (!path.spotterLat || !path.spotterLon || !path.dxLat || !path.dxLon) return;
+          if (path.spotterLat == null || path.spotterLon == null || path.dxLat == null || path.dxLon == null) return;
           if (isNaN(path.spotterLat) || isNaN(path.spotterLon) || isNaN(path.dxLat) || isNaN(path.dxLon)) return;
 
           const pathPoints = getGreatCirclePoints(path.spotterLat, path.spotterLon, path.dxLat, path.dxLon);
@@ -1191,6 +1193,20 @@ export const WorldMap = ({
             dxPathsLinesRef.current.push(line);
           });
 
+          // Render small dot at spotter end on all 3 world copies
+          replicatePoint(path.spotterLat, path.spotterLon).forEach(([lat, lon]) => {
+            const spotterCircle = L.circleMarker([lat, lon], {
+              radius: isHovered ? 6 : 3,
+              fillColor: isHovered ? '#ffffff' : color,
+              color: isHovered ? color : '#fff',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: isHovered ? 1 : 0.7,
+              interactive: false,
+            }).addTo(map);
+            dxPathsMarkersRef.current.push(spotterCircle);
+          });
+
           // Render circleMarker on all 3 world copies
           replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
             const dxCircle = L.circleMarker([lat, lon], {
@@ -1203,7 +1219,7 @@ export const WorldMap = ({
               interactive: !!onSpotClick,
             })
               .bindPopup(
-                `<b data-qrz-call="${esc(path.dxCall)}" style="color: ${color}; cursor:pointer">${esc(path.dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`,
+                `<b data-qrz-call="${esc(dxCall)}" style="color: ${color}; cursor:pointer">${esc(dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`,
               )
               .addTo(map);
 
@@ -1219,7 +1235,7 @@ export const WorldMap = ({
           if (showDXLabels || isHovered) {
             const labelIcon = L.divIcon({
               className: '',
-              html: `<span style="display:inline-block;background:${isHovered ? '#fff' : color};color:${isHovered ? color : '#000'};padding:${isHovered ? '3px 6px' : '2px 5px'};border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? '12px' : '11px'};font-weight:700;white-space:nowrap;border:1px solid ${isHovered ? color : 'rgba(0,0,0,0.5)'};box-shadow:0 1px ${isHovered ? '4px' : '2px'} rgba(0,0,0,${isHovered ? '0.5' : '0.3'});line-height:1.1;">${path.dxCall}</span>`,
+              html: `<span style="display:inline-block;background:${isHovered ? '#fff' : color};color:${isHovered ? color : '#000'};padding:${isHovered ? '3px 6px' : '2px 5px'};border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? '12px' : '11px'};font-weight:700;white-space:nowrap;border:1px solid ${isHovered ? color : 'rgba(0,0,0,0.5)'};box-shadow:0 1px ${isHovered ? '4px' : '2px'} rgba(0,0,0,${isHovered ? '0.5' : '0.3'});line-height:1.1;">${esc(dxCall)}</span>`,
               iconSize: [0, 0],
               iconAnchor: [0, 0],
             });
