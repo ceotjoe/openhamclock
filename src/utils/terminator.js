@@ -49,6 +49,14 @@ function hourAngle(gmstVal, sunPos, longitude) {
   return gmstVal + longitude * RAD - sunPos.alpha;
 }
 
+/** Compute terminator latitude for a given hour angle and sun declination */
+function terminatorLat(ha, tanDelta) {
+  if (Math.abs(tanDelta) < 1e-14) {
+    return Math.cos(ha) > 0 ? -89.99 : 89.99;
+  }
+  return Math.atan(-Math.cos(ha) / tanDelta) / RAD;
+}
+
 /**
  * Compute the night polygon for a given time
  * Returns array of coordinate rings (3 world copies)
@@ -62,22 +70,21 @@ function computeNightPolygon(time, resolution) {
   const gmstVal = gmst(date);
   const ha0 = hourAngle(gmstVal, sunPos, -180);
 
-  const steps = Math.ceil(360 / resolution);
+  // Near equinox (small declination) the terminator is nearly a meridian
+  // and latitude flips from +90 to -90 over a very narrow longitude band.
+  // Use finer resolution so the rapid transition renders as a smooth line
+  // instead of a square wave.
+  const absDeclDeg = Math.abs(sunPos.delta / RAD);
+  const effectiveRes = absDeclDeg < 2 ? Math.min(resolution, 0.5) : resolution;
+
+  const steps = Math.ceil(360 / effectiveRes);
+  const tanDelta = Math.tan(sunPos.delta);
   const baseLine = [];
 
   for (let i = 0; i <= steps; i++) {
     const lon = -180 + (i * 360) / steps;
     const ha = ha0 + ((i * 360) / steps) * RAD;
-
-    let lat;
-    const tanDelta = Math.tan(sunPos.delta);
-    if (Math.abs(tanDelta) < 1e-10) {
-      // Near equinox: terminator approaches a meridian
-      lat = Math.cos(ha) > 0 ? -89.9 : 89.9;
-    } else {
-      lat = Math.atan(-Math.cos(ha) / tanDelta) / RAD;
-    }
-
+    const lat = terminatorLat(ha, tanDelta);
     baseLine.push([lat, lon]);
   }
 
