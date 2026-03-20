@@ -337,6 +337,14 @@ body::before {
   font-size: 11px !important;
 }
 
+/* Azimuthal projection Leaflet overlay — transparent background */
+.azimuthal-leaflet-overlay .leaflet-container {
+  background: transparent !important;
+}
+.azimuthal-leaflet-overlay .leaflet-tile-pane {
+  display: none;
+}
+
 .leaflet-control-attribution a {
   color: var(--text-secondary) !important;
 }

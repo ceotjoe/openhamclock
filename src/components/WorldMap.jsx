@@ -145,6 +145,15 @@ export const WorldMap = ({
   const rotatorEnabledRef = useRef(rotatorControlEnabled);
   const deRef = useRef(deLocation);
 
+  // Azimuthal overlay Leaflet map (from AzimuthalMap component)
+  const azimuthalMapRef = useRef(null);
+  const [azimuthalMapReady, setAzimuthalMapReady] = useState(false);
+
+  const handleAzimuthalMapReady = useCallback((map) => {
+    azimuthalMapRef.current = map;
+    setAzimuthalMapReady(!!map);
+  }, []);
+
   // DX highlight state (style existing polylines via refs; no layer rebuilds)
   const dxLineIndexRef = useRef(new Map());
   const dxHighlightKeyRef = useRef('');
@@ -1933,6 +1942,7 @@ export const WorldMap = ({
           potaSpots={potaSpots}
           wwffSpots={wwffSpots}
           sotaSpots={sotaSpots}
+          wwbotaSpots={wwbotaSpots}
           dxPaths={dxPaths}
           dxFilters={dxFilters}
           mapBandFilter={mapBandFilter}
@@ -1942,6 +1952,7 @@ export const WorldMap = ({
           showPOTA={showPOTA}
           showWWFF={showWWFF}
           showSOTA={showSOTA}
+          showWWBOTA={showWWBOTA}
           showPSKReporter={showPSKReporter}
           showPSKPaths={showPSKPaths}
           showWSJTX={showWSJTX}
@@ -1953,6 +1964,7 @@ export const WorldMap = ({
           tileStyle={mapStyle}
           gibsOffset={gibsOffset}
           lowMemoryMode={lowMemoryMode}
+          onMapReady={handleAzimuthalMapReady}
         />
       )}
 
@@ -1967,25 +1979,27 @@ export const WorldMap = ({
         }}
       />
 
-      {/* Render all plugin layers (Leaflet only) */}
-      {!isAzimuthal &&
-        mapInstanceRef.current &&
-        getAllLayers().map((layerDef) => (
+      {/* Render plugin layers on active map (Mercator or Azimuthal) */}
+      {(() => {
+        const activeMap = isAzimuthal ? azimuthalMapRef.current : mapInstanceRef.current;
+        if (!activeMap) return null;
+        return getAllLayers().map((layerDef) => (
           <PluginLayer
-            key={layerDef.id}
+            key={`${layerDef.id}-${isAzimuthal ? 'az' : 'merc'}`}
             plugin={layerDef}
             enabled={pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled}
             opacity={pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity}
             mapBandFilter={mapBandFilter}
             config={pluginLayerStates[layerDef.id]?.config ?? layerDef.config}
-            map={mapInstanceRef.current}
+            map={activeMap}
             satellites={satellites}
             allUnits={allUnits}
             callsign={callsign}
             locator={deLocator}
             lowMemoryMode={lowMemoryMode}
           />
-        ))}
+        ));
+      })()}
 
       {/* Unified map control dock */}
       {!isAzimuthal && (
