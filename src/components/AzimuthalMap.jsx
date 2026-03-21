@@ -532,7 +532,9 @@ export default function AzimuthalMap({
 
         const p = toCanvas(path.dxLat, path.dxLon);
 
-        if (path.spotterLat && path.spotterLon) {
+        // Only draw spotter circle and lines if spotter coordinates are valid (not null/undefined).
+        // Using != null instead of truthy check (&&) ensures coordinates at 0,0 are handled correctly.
+        if (path.spotterLat != null && path.spotterLon != null) {
           const s = toCanvas(path.spotterLat, path.spotterLon);
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);

@@ -155,6 +155,7 @@ const applyBandFilter = (item, filters) => {
 
 /**
  * Applies the Mode filter, which is specified in the UI 'Modes' tab of the DXCluster's 'Filters' dialog
+ * Detects mode from comment first, then falls back to frequency-based inference (known calling frequencies).
  * <br/>
  * **Used internally only, by applyDXFilters, do not export.**
  *
@@ -170,6 +171,7 @@ const applyBandFilter = (item, filters) => {
  */
 const applyModeFilter = (item, filters) => {
   if (filters.modes?.length > 0) {
+    // detectMode() prioritizes comment but falls back to known calling frequencies (e.g., 14.074 → FT8)
     const mode = detectMode(item.comment, item.freq);
     if (!mode || !filters.modes.includes(mode)) return false;
   }

@@ -20,7 +20,10 @@ export const useDXClusterData = (filters = {}, config = {}) => {
   const spotRetentionMs = (filters?.spotRetentionMinutes || 30) * 60 * 1000;
   const pollInterval = config.lowMemoryMode ? 120000 : 60000; // 120s in low memory, 60s otherwise
   const source = config.dxClusterSource || 'dxspider-proxy';
-  const effectiveRetentionMs = source === 'udp' ? Math.max(spotRetentionMs, 24 * 60 * 60 * 1000) : spotRetentionMs;
+  // Always respect the user's configured retention time, regardless of source.
+  // If UDP sources benefit from longer retention, that should be surfaced as a UI suggestion,
+  // not forced as an override of the user's explicit preference.
+  const effectiveRetentionMs = spotRetentionMs;
 
   // Build query params for custom cluster settings
   const buildQueryParams = useCallback(() => {
@@ -121,8 +124,10 @@ export const useDXClusterData = (filters = {}, config = {}) => {
   // Apply filters and split into spots (for list) and paths (for map)
   useEffect(() => {
     const filtered = applyFilters(allData, filters);
-    // If UDP is active and filters hide everything, prefer showing live spots over an empty panel.
-    const effectiveFiltered = source === 'udp' && filtered.length === 0 && allData.length > 0 ? allData : filtered;
+    // Always respect user filters — even if UDP returns no matching spots.
+    // If a user filters to "FT8 only," showing all spots as a fallback violates that preference.
+    // An empty list is correct behavior and respects the user's intent.
+    const effectiveFiltered = filtered;
 
     // Low memory mode limits
     const lowMemoryMode = config.lowMemoryMode || false;

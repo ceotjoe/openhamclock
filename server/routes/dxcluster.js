@@ -6,7 +6,6 @@
 const dns = require('dns');
 const dgram = require('dgram');
 const net = require('net');
-const dns = require('dns');
 const { gridToLatLon, getBandFromKHz } = require('../utils/grid');
 const { areDXPathsDuplicate } = require('../utils/dxClusterPathIdentity');
 
@@ -931,7 +930,12 @@ module.exports = function (app, ctx) {
       return arr.map((item) => normalizeUdpSpotCandidate(item, fallbackTs)).filter(Boolean);
     } catch {}
 
-    if (text.startsWith('<?xml') || text.startsWith('<spot') || text.startsWith('<RadioInfo') || (text.startsWith('<') && text.includes('>'))) {
+    if (
+      text.startsWith('<?xml') ||
+      text.startsWith('<spot') ||
+      text.startsWith('<RadioInfo') ||
+      (text.startsWith('<') && text.includes('>'))
+    ) {
       // Try the narrow MacLoggerDX parser first (standard <spottercall>/<dxcall> tags)
       if (text.startsWith('<?xml') || text.startsWith('<spot') || text.startsWith('<RadioInfo')) {
         const xmlSpot = parseMacLoggerDxXmlSpot(text, fallbackTs);
