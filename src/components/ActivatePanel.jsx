@@ -68,7 +68,7 @@ export const ActivatePanel = ({
           ) : (
             '▲ '
           )}
-          {mapDefs.name} ACTIVATORS {data?.length > 0 ? `(${data.length})` : ''}
+          {mapDefs.name} {data?.length > 0 ? `(${data.length})` : ''}
           {checkedTime && (
             <span
               style={{
@@ -181,14 +181,14 @@ export const ActivatePanel = ({
               >
                 <span
                   style={{
-                    color: '#44cc44',
+                    color: `${mapDefs.color}`,
                     fontWeight: '600',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  <CallsignLink call={spot.call} color="#44cc44" fontWeight="600" />
+                  <CallsignLink call={spot.call} color={mapDefs.color} fontWeight="600" />
                 </span>
                 <span
                   style={{
@@ -201,7 +201,7 @@ export const ActivatePanel = ({
                 >
                   {spot.ref}
                 </span>
-                <span style={{ color: 'var(--accent-cyan)', textAlign: 'right' }}>
+                <span style={{ color: 'var(--accent-cyan)', textAlign: 'right' }} title={`${spot.freq} ${spot.mode}`}>
                   {(() => {
                     if (!spot.freq) return '?';
                     const freqVal = parseFloat(spot.freq);
