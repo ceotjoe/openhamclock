@@ -32,8 +32,23 @@ const CHANGELOG = [
     version: '26.1.1',
     date: '2026-03-20',
     heading:
-      'New versioning scheme (year.ui.backend), SDR integration for rig-bridge, DX cluster text filter, RBN spotter filter, DX favorites, improved activation panel icons, DX target panel toggle, bug fixes, and satellite updates.',
+      'EmComm layout with APRS resource tracking, redesigned Classic layout, new versioning scheme, SDR integration, DX cluster text filter, RBN spotter filter, DX favorites, improved activation panel icons, and bug fixes.',
     features: [
+      {
+        icon: '🚨',
+        title: 'EmComm Layout — Emergency Communications Dashboard',
+        desc: 'New dedicated layout for ARES/RACES and emergency communications. Full-screen map with range rings, NWS weather alerts, FEMA disaster declarations, nearby shelters with capacity bars, and filtered APRS stations showing only emergency symbols (EOC, Shelter, ARES, Skywarn, Red Cross). Designed for served agency operations and SKYWARN nets.',
+      },
+      {
+        icon: '📦',
+        title: 'APRS Resource Tokens — Structured Emergency Data',
+        desc: 'EmComm APRS stations can now encode structured resource data in their beacon comments using bracket notation (e.g. [Beds 30/100][Water -50][Power OK]). OpenHamClock parses these into visual resource cards with progress bars, need indicators, and a summary dashboard aggregating data across all stations. Supports capacity, quantity, need, status, and critical alert token types.',
+      },
+      {
+        icon: '🏛️',
+        title: 'Classic Layout — Redesigned',
+        desc: 'The Classic layout has been refreshed with a cleaner look while keeping the spirit of the original HamClock by WB0OEW. Improved spacing, updated color palette, and better readability on dedicated displays and Raspberry Pi kiosk setups.',
+      },
       {
         icon: '📻',
         title: 'SDR Integration — FlexRadio SmartSDR & RTL-SDR',

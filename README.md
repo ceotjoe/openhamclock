@@ -74,6 +74,7 @@ npm run dev
   - [Header Bar](#header-bar)
   - [Analog Clock](#analog-clock)
 - [Themes and Layouts](#themes-and-layouts)
+  - [EmComm Layout](#emcomm-layout)
 - [Map Layers and Plugins](#map-layers-and-plugins)
 - [Languages](#languages)
 - [Profiles](#profiles)
@@ -623,12 +624,54 @@ All themes use CSS custom properties defined in `src/styles/main.css`. To create
 
 ### Layouts
 
-Two layout modes, selectable in Settings or via `LAYOUT` in `.env`:
+Three layout modes, selectable in Settings or via `LAYOUT` in `.env`:
 
 | Layout      | Description                                                                                                                                                                                                                                                           |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Modern**  | Responsive 3-column grid layout. The map fills the center column, with sidebar panels on the left and right. Designed for widescreen monitors (1920×1080 and above). Panels reflow on smaller screens.                                                                |
 | **Classic** | Inspired by the original HamClock by Elwood Downey, WB0OEW (SK). Features a black background, large colored numeric displays for callsign and frequency, a rainbow frequency bar, and a full-width map. Optimized for dedicated displays and Raspberry Pi kiosk mode. |
+| **EmComm**  | Emergency Communications dashboard for ARES/RACES operations. Full-screen map with range rings, NWS alerts, FEMA disaster declarations, nearby shelters, and APRS emergency stations with resource tracking. See [EmComm Layout](#emcomm-layout) below.               |
+
+### EmComm Layout
+
+The EmComm (Emergency Communications) layout is a purpose-built dashboard for ARES, RACES, SKYWARN, and served agency operations. It replaces the standard sidebar panels with emergency-focused data.
+
+**Sidebar panels:**
+
+| Panel                     | Description                                                                                                                                   |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Resource Summary**      | Aggregated resource dashboard showing totals across all APRS stations reporting resource tokens. Progress bars for capacity, need indicators. |
+| **NWS Alerts**            | Active weather watches, warnings, and advisories from the National Weather Service, color-coded by severity with countdown to expiry.         |
+| **Disaster Declarations** | Recent FEMA disaster declarations for your state, auto-resolved from your station coordinates via reverse geocoding.                          |
+| **Nearby Shelters**       | Open shelters within 200 km, sorted by distance, with capacity bars and accessibility indicators.                                             |
+| **EmComm Stations**       | APRS stations using emergency symbols (EOC, Shelter, ARES, Skywarn, Red Cross, Emergency), with resource token pills when available.          |
+
+**APRS Resource Tokens:**
+
+Operators at shelters or EOCs can encode structured resource data in their APRS beacon comments using bracket notation. OpenHamClock parses these tokens and displays them as visual resource cards.
+
+Token format (within the 67-character APRS comment field):
+
+```
+[Key Value]          — quantity (e.g., [Food 50])
+[Key Current/Max]    — capacity (e.g., [Beds 30/100])
+[Key -Value]         — resource NEEDED (e.g., [Water -100])
+[Key OK]             — status nominal
+[Key !]              — critical alert
+```
+
+Built-in token keys with icons: `Beds`, `Water`, `Food`, `Power`, `Fuel`, `Med`, `Staff`, `Evac`, `Comms`, `Gen`. The parser accepts any key — unknown keys display with a generic icon.
+
+Example beacon comment: `[Beds 30/100][Power OK][Water -50] Shelter Alpha` (47 chars)
+
+This renders as three color-coded pills on the station card, and the values are aggregated into the Resource Summary panel at the top of the sidebar.
+
+**Map features:**
+
+- Range rings at 50, 100, and 200 km from your station
+- NWS alert polygons color-coded by severity
+- Shelter markers with capacity popups
+- EmComm APRS station markers with resource token popups
 
 ---
 

@@ -286,6 +286,8 @@ export const SettingsPanel = ({
     }
   };
 
+  const gridEditingRef = useRef(false);
+
   function setConfigLocator(grid) {
     if (grid.length >= 4) {
       config.locator = grid.slice(0, 4).toUpperCase() + grid.slice(4).toLowerCase();
@@ -294,6 +296,7 @@ export const SettingsPanel = ({
     }
   }
   const handleGridChange = (grid) => {
+    gridEditingRef.current = true;
     setGridSquare(grid.toUpperCase());
     if (grid.length >= 4) {
       const parsed = parseGridSquare(grid);
@@ -305,7 +308,19 @@ export const SettingsPanel = ({
     setConfigLocator(grid);
   };
 
+  const handleGridBlur = () => {
+    gridEditingRef.current = false;
+    // Now recalculate full 6-char grid from lat/lon
+    if (lat != null && lon != null) {
+      const grid = calculateGridSquare(lat, lon);
+      setGridSquare(grid);
+      setConfigLocator(grid);
+    }
+  };
+
   useEffect(() => {
+    // Skip auto-completion while user is actively typing in the grid field
+    if (gridEditingRef.current) return;
     if (lat != null && lon != null) {
       const grid = calculateGridSquare(lat, lon);
       setGridSquare(grid);
@@ -711,6 +726,7 @@ export const SettingsPanel = ({
                 type="text"
                 value={gridSquare}
                 onChange={(e) => handleGridChange(e.target.value)}
+                onBlur={handleGridBlur}
                 placeholder={t('station.settings.locator.placeholder')}
                 maxLength={6}
                 style={{
