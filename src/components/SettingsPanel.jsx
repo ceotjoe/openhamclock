@@ -464,9 +464,9 @@ export const SettingsPanel = ({
   };
 
   const unitString = (t) => {
-    // Use "USA Customary" instead of "Imperial" to avoid confusion with UK Imperial units which are different,
-    // for instance 'inHg' is not a UK Imperial unit but is commonly used in USA.
-    return t == 'imperial' ? 'USA Customary' : 'Metric';
+    // Use "US Customary" instead of "Imperial" to avoid confusion with UK Imperial units which are different,
+    // for instance pressure 'inHg' is not a UK Imperial unit but is used in USA.
+    return t == 'imperial' ? 'US Customary' : 'Metric';
   };
 
   return (
