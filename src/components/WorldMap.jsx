@@ -2184,8 +2184,8 @@ export const WorldMap = ({
         <CallsignWeatherOverlay hoveredSpot={hoveredSpot} enabled={dxWeatherAllowed} allUnits={allUnits} />
       )}
 
-      {/* DX News Ticker - left side of bottom bar */}
-      {!hideOverlays && !mapUiHidden && showDXNews && <DXNewsTicker />}
+      {/* DX News Ticker - left side of bottom bar (independent of UI hide toggle) */}
+      {!hideOverlays && showDXNews && <DXNewsTicker />}
 
       {/* Legend toggle button */}
       {!hideOverlays && !mapUiHidden && (
