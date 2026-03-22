@@ -1119,6 +1119,8 @@ module.exports = function (app, ctx) {
         error: 'Session ID required — download from the OpenHamClock dashboard',
       });
     }
+    // Get the multicast address if we were passed one
+    const multicastAddress = req.query.multicast;
 
     // SECURITY: Validate platform parameter
     if (!['linux', 'mac', 'windows'].includes(platform)) {
@@ -1133,6 +1135,7 @@ module.exports = function (app, ctx) {
     const safeServerURL = sanitizeForShell(serverURL);
     const safeSessionId = sanitizeForShell(sessionId);
     const safeRelayKey = sanitizeForShell(WSJTX_RELAY_KEY);
+    const safeMulticastAddress = multicastAddress ? sanitizeForShell(multicastAddress) : '';
 
     if (platform === 'linux' || platform === 'mac') {
       // Build bash script with relay.js embedded as heredoc
@@ -1164,11 +1167,11 @@ module.exports = function (app, ctx) {
         '    exit 1',
         'fi',
         '',
-        '# Write relay agent to temp file',
-        'RELAY_FILE=$(mktemp /tmp/ohc-relay-XXXXXX.js)',
+        '# Write relay agent to temp file (unfortunately mktemp on macOS does not work the same as on Linux',
+        'RELAY_FILE=$([[ "$(uname -s)" == Linux ]] && mktemp /tmp/ohc-relay-XXXXXX.js || echo /tmp/ohc-relay-$$.js)',
         'trap "rm -f $RELAY_FILE" EXIT',
         '',
-        'cat > "$RELAY_FILE" << \'OPENHAMCLOCK_RELAY_EOF\'',
+        'cat > "${RELAY_FILE}" << \'OPENHAMCLOCK_RELAY_EOF\'',
         relayJs,
         'OPENHAMCLOCK_RELAY_EOF',
         '',
@@ -1176,6 +1179,7 @@ module.exports = function (app, ctx) {
         'exec node "$RELAY_FILE" \\',
         '  --url "' + safeServerURL + '" \\',
         '  --key "' + safeRelayKey + '" \\',
+        multicastAddress ? '  --multicast "' + safeMulticastAddress + '" \\' : '',
         '  --session "' + safeSessionId + '"',
       ];
 
@@ -1276,19 +1280,22 @@ module.exports = function (app, ctx) {
         'echo   Relay agent ready.',
         'echo.',
         'echo   In WSJT-X: Settings ^> Reporting ^> UDP Server',
-        'echo     Address: 127.0.0.1   Port: 2237',
+        'echo     Address: ' + multicastAddress ? safeMulticastAddress : '127.0.0.1' + '   Port: 2237,',
         'echo.',
         'echo   Press Ctrl+C to stop',
         'echo.',
         '',
         ':: Run relay',
         '%NODE_EXE% "%TEMP%\\ohc-relay.js" --url "' +
-          safeServerURL +
-          '" --key "' +
-          safeRelayKey +
-          '" --session "' +
-          safeSessionId +
-          '"',
+        safeServerURL +
+        '" --key "' +
+        safeRelayKey +
+        '" --session "' +
+        safeSessionId +
+        '"' +
+        multicastAddress
+          ? ' --multicast "' + safeMulticastAddress + "'"
+          : '',
         '',
         'echo.',
         'echo   Relay stopped.',
