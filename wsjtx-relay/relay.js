@@ -515,9 +515,6 @@ socket.on('listening', () => {
   console.log('  Waiting for WSJT-X packets...');
   console.log('');
 
-  // Bind to all interfaces so WSJT-X can reach it from any address
-  // socket.bind(config.port, '0.0.0.0');
-
   if (!!config.maddr) {
     try {
       socket.addMembership(config.maddr);
