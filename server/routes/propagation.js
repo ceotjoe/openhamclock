@@ -56,9 +56,11 @@ module.exports = function (app, ctx) {
     }
   }
 
-  // Negative cache: if ITURHFProp fails, don't retry for 2 minutes
+  // Negative cache: only back off after repeated failures
   let iturhfpropDown = 0;
-  const ITURHFPROP_BACKOFF = 2 * 60 * 1000; // 2 minutes
+  let iturhfpropFailCount = 0;
+  const ITURHFPROP_BACKOFF = 30 * 1000; // 30 seconds
+  const ITURHFPROP_FAIL_THRESHOLD = 3; // 3 consecutive failures before backing off
 
   // Background fetch queue — runs ITURHFProp requests without blocking the response
   const bgQueue = new Set(); // active queue keys (prevents duplicate requests)
@@ -79,7 +81,8 @@ module.exports = function (app, ctx) {
    */
   async function fetchITURHFPropPrediction(txLat, txLon, rxLat, rxLon, ssn, month, hour, txPower, txGain) {
     if (!ITURHFPROP_URL) return null;
-    if (Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF) return null;
+    if (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
+      return null;
 
     const pw = Math.round(txPower || 100);
     const gn = Math.round((txGain || 0) * 10) / 10;
@@ -93,7 +96,7 @@ module.exports = function (app, ctx) {
       const url = `${ITURHFPROP_URL}/api/bands?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&hour=${hour}&txPower=${pw}&txGain=${gn}`;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s for single hour
 
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
@@ -105,8 +108,10 @@ module.exports = function (app, ctx) {
 
       const data = await response.json();
       ituCacheSet(iturhfpropSingleCache, cacheKey, data);
+      iturhfpropFailCount = 0; // reset on success
       return data;
     } catch (err) {
+      iturhfpropFailCount++;
       iturhfpropDown = Date.now();
       if (err.name !== 'AbortError') {
         logErrorOnce('Hybrid', `ITURHFProp: ${err.message}`);
@@ -127,7 +132,8 @@ module.exports = function (app, ctx) {
 
   async function fetchITURHFPropHourly(txLat, txLon, rxLat, rxLon, ssn, month, txPower, txGain) {
     if (!ITURHFPROP_URL) return null;
-    if (Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF) return null;
+    if (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
+      return null;
 
     const pw = Math.round(txPower || 100);
     const gn = Math.round((txGain || 0) * 10) / 10;
@@ -140,7 +146,7 @@ module.exports = function (app, ctx) {
       const url = `${ITURHFPROP_URL}/api/predict/hourly?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&txPower=${pw}&txGain=${gn}`;
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s — P.533 needs time for 24h×10bands
 
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
@@ -151,16 +157,18 @@ module.exports = function (app, ctx) {
 
       if (data?.hourly?.length > 0) {
         ituCacheSet(iturhfpropHourlyMap, cacheKey, data);
+        iturhfpropFailCount = 0; // reset on success
         logDebug(`[ITURHFProp] Cached 24h prediction: ${cacheKey.substring(0, 40)}`);
       }
 
       return data;
     } catch (err) {
-      iturhfpropDown = Date.now(); // back off for 2 minutes
+      iturhfpropFailCount++;
+      iturhfpropDown = Date.now();
       if (err.name === 'AbortError') {
-        logErrorOnce('ITURHFProp', 'Hourly fetch timed out — using built-in model');
+        logErrorOnce('ITURHFProp', `Hourly fetch timed out (attempt ${iturhfpropFailCount})`);
       } else {
-        logErrorOnce('ITURHFProp', `Hourly fetch: ${err.message}`);
+        logErrorOnce('ITURHFProp', `Hourly fetch: ${err.message} (attempt ${iturhfpropFailCount})`);
       }
       return null;
     }
@@ -997,7 +1005,11 @@ module.exports = function (app, ctx) {
   // Fires background ITURHFProp requests so that by the time a user
   // clicks the spot, the precise P.533-14 prediction is already cached.
   function prewarmPropagation(deLat, deLon, dxLat, dxLon) {
-    if (!ITURHFPROP_URL || Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF) return;
+    if (
+      !ITURHFPROP_URL ||
+      (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
+    )
+      return;
 
     const currentMonth = new Date().getMonth() + 1;
     // Use defaults for mode/power — most users are SSB/100W
