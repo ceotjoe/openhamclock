@@ -1,6 +1,5 @@
 /**
- * Propagation routes — ionosonde, hybrid propagation, heatmap.
- * Lines ~8179-9360 of original server.js
+ * Propagation routes — ITU-R P.533-14 predictions, built-in fallback, heatmap.
  */
 
 module.exports = function (app, ctx) {
@@ -17,89 +16,6 @@ module.exports = function (app, ctx) {
     n0nbhCache,
   } = ctx;
 
-  // ============================================
-  // IONOSONDE DATA API (Real-time ionospheric data from KC2G/GIRO)
-  // ============================================
-
-  // Cache for ionosonde data (refresh every 10 minutes)
-  let ionosondeCache = {
-    data: null,
-    timestamp: 0,
-    maxAge: 10 * 60 * 1000, // 10 minutes
-  };
-
-  // Fetch real-time ionosonde data from KC2G (GIRO network)
-  async function fetchIonosondeData() {
-    const now = Date.now();
-
-    // Return cached data if fresh
-    if (ionosondeCache.data && now - ionosondeCache.timestamp < ionosondeCache.maxAge) {
-      return ionosondeCache.data;
-    }
-
-    try {
-      const response = await fetch('https://prop.kc2g.com/api/stations.json', {
-        headers: { 'User-Agent': 'OpenHamClock/3.13.1' },
-        timeout: 15000,
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const data = await response.json();
-
-      // Filter to only recent data (within last 2 hours) with valid readings
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-      const validStations = data
-        .filter((s) => {
-          if (s.time.slice(-1) != 'Z') s.time = `${s.time}Z`; // s.time SHOULD have a trailing Z on it so that Date() understands that it is UTC
-          if (!s.fof2 || !s.station) return false;
-          const stationTime = new Date(s.time);
-          return stationTime > twoHoursAgo && s.cs > 0; // confidence score > 0
-        })
-        .map((s) => ({
-          code: s.station.code,
-          name: s.station.name,
-          lat: parseFloat(s.station.latitude),
-          lon:
-            parseFloat(s.station.longitude) > 180
-              ? parseFloat(s.station.longitude) - 360
-              : parseFloat(s.station.longitude),
-          foF2: s.fof2,
-          mufd: s.mufd, // MUF at 3000km
-          hmF2: s.hmf2, // Height of F2 layer
-          md: parseFloat(s.md) || 3.0, // M(3000)F2 factor
-          confidence: s.cs,
-          time: s.time,
-        }));
-
-      ionosondeCache = {
-        data: validStations,
-        timestamp: now,
-      };
-
-      logDebug(`[Ionosonde] Fetched ${validStations.length} valid stations from KC2G`);
-      return validStations;
-    } catch (error) {
-      logErrorOnce('Ionosonde', `Fetch error: ${error.message}`);
-      return ionosondeCache.data || [];
-    }
-  }
-
-  // API endpoint to get ionosonde data
-  app.get('/api/ionosonde', async (req, res) => {
-    try {
-      const stations = await fetchIonosondeData();
-      res.json({
-        count: stations.length,
-        timestamp: new Date().toISOString(),
-        stations: stations,
-      });
-    } catch (error) {
-      logErrorOnce('Ionosonde', `API: ${error.message}`);
-      res.status(500).json({ error: 'Failed to fetch ionosonde data' });
-    }
-  });
-
   // Calculate distance between two points in km
   function haversineDistance(lat1, lon1, lat2, lon2) {
     const R = 6371;
@@ -111,124 +27,76 @@ module.exports = function (app, ctx) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  // Interpolate foF2 at a given location using inverse distance weighting
-  function interpolateFoF2(lat, lon, stations) {
-    if (!stations || stations.length === 0) return null;
+  // ============================================
+  // ITURHFProp SERVICE INTEGRATION (ITU-R P.533-14)
+  // ============================================
 
-    // Maximum distance (km) to consider ionosonde data valid
-    // Beyond this, the data is too far away to be representative
-    const MAX_VALID_DISTANCE = 3000; // km
+  // Multi-entry LRU cache for ITURHFProp results — different DE/DX paths
+  // don't evict each other. Keyed by rounded coordinates + solar params.
+  const iturhfpropSingleCache = new Map(); // key → { data, ts }
+  const iturhfpropHourlyMap = new Map(); // key → { data, ts }
+  const ITUCACHE_TTL = 30 * 60 * 1000; // 30 min — predictions don't change fast
+  const ITUCACHE_MAX = 200; // max entries per cache
 
-    // Calculate distances to all stations
-    const stationsWithDist = stations
-      .map((s) => ({
-        ...s,
-        distance: haversineDistance(lat, lon, s.lat, s.lon),
-      }))
-      .filter((s) => s.foF2 > 0);
-
-    if (stationsWithDist.length === 0) return null;
-
-    // Sort by distance and take nearest 5
-    stationsWithDist.sort((a, b) => a.distance - b.distance);
-
-    // Check if nearest station is within valid range
-    if (stationsWithDist[0].distance > MAX_VALID_DISTANCE) {
-      logDebug(
-        `[Ionosonde] Nearest station ${stationsWithDist[0].name} is ${Math.round(stationsWithDist[0].distance)}km away - too far, using estimates`,
-      );
-      return {
-        foF2: null,
-        mufd: null,
-        hmF2: null,
-        md: 3.0,
-        nearestStation: stationsWithDist[0].name,
-        nearestDistance: Math.round(stationsWithDist[0].distance),
-        stationsUsed: 0,
-        method: 'no-coverage',
-        reason: `Nearest ionosonde (${stationsWithDist[0].name}) is ${Math.round(stationsWithDist[0].distance)}km away - no local coverage`,
-      };
+  function ituCacheGet(cache, key) {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > ITUCACHE_TTL) {
+      cache.delete(key);
+      return null;
     }
-
-    // Filter to only stations within valid range
-    const validStations = stationsWithDist.filter((s) => s.distance <= MAX_VALID_DISTANCE);
-    const nearest = validStations.slice(0, 5);
-
-    // If very close to a station, use its value directly
-    if (nearest[0].distance < 100) {
-      return {
-        foF2: nearest[0].foF2,
-        mufd: nearest[0].mufd,
-        hmF2: nearest[0].hmF2,
-        md: nearest[0].md,
-        source: nearest[0].name,
-        confidence: nearest[0].confidence,
-        nearestDistance: Math.round(nearest[0].distance),
-        method: 'direct',
-      };
+    return entry.data;
+  }
+  function ituCacheSet(cache, key, data) {
+    cache.set(key, { data, ts: Date.now() });
+    // LRU eviction
+    if (cache.size > ITUCACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      cache.delete(oldest);
     }
-
-    // Inverse distance weighted interpolation
-    let sumWeights = 0;
-    let sumFoF2 = 0;
-    let sumMufd = 0;
-    let sumHmF2 = 0;
-    let sumMd = 0;
-
-    nearest.forEach((s) => {
-      const weight = s.confidence / 100 / Math.pow(s.distance, 2);
-      sumWeights += weight;
-      sumFoF2 += s.foF2 * weight;
-      if (s.mufd) sumMufd += s.mufd * weight;
-      if (s.hmF2) sumHmF2 += s.hmF2 * weight;
-      if (s.md) sumMd += s.md * weight;
-    });
-
-    return {
-      foF2: sumFoF2 / sumWeights,
-      mufd: sumMufd > 0 ? sumMufd / sumWeights : null,
-      hmF2: sumHmF2 > 0 ? sumHmF2 / sumWeights : null,
-      md: sumMd > 0 ? sumMd / sumWeights : 3.0,
-      nearestStation: nearest[0].name,
-      nearestDistance: Math.round(nearest[0].distance),
-      stationsUsed: nearest.length,
-      method: 'interpolated',
-    };
   }
 
-  // ============================================
-  // HYBRID PROPAGATION SYSTEM
-  // Combines ITURHFProp (ITU-R P.533-14) with real-time ionosonde data
-  // ============================================
+  // Negative cache: only back off after repeated failures
+  let iturhfpropDown = 0;
+  let iturhfpropFailCount = 0;
+  const ITURHFPROP_BACKOFF = 30 * 1000; // 30 seconds
+  const ITURHFPROP_FAIL_THRESHOLD = 3; // 3 consecutive failures before backing off
 
-  // Cache for ITURHFProp predictions (5-minute cache)
-  let iturhfpropCache = {
-    data: null,
-    key: null,
-    timestamp: 0,
-    maxAge: 5 * 60 * 1000, // 5 minutes
-  };
+  // Background fetch queue — runs ITURHFProp requests without blocking the response
+  const bgQueue = new Set(); // active queue keys (prevents duplicate requests)
+
+  function queueBackgroundFetch(cacheKey, fetchFn) {
+    if (bgQueue.has(cacheKey) || bgQueue.size > 20) return; // dedup & cap
+    bgQueue.add(cacheKey);
+    fetchFn()
+      .then((data) => {
+        if (data) logDebug(`[ITURHFProp] Background fetch complete: ${cacheKey.substring(0, 40)}`);
+      })
+      .catch(() => {})
+      .finally(() => bgQueue.delete(cacheKey));
+  }
 
   /**
    * Fetch base prediction from ITURHFProp service
    */
-  async function fetchITURHFPropPrediction(txLat, txLon, rxLat, rxLon, ssn, month, hour) {
+  async function fetchITURHFPropPrediction(txLat, txLon, rxLat, rxLon, ssn, month, hour, txPower, txGain) {
     if (!ITURHFPROP_URL) return null;
+    if (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
+      return null;
 
-    const cacheKey = `${txLat.toFixed(1)},${txLon.toFixed(1)}-${rxLat.toFixed(1)},${rxLon.toFixed(1)}-${ssn}-${month}-${hour}`;
+    const pw = Math.round(txPower || 100);
+    const gn = Math.round((txGain || 0) * 10) / 10;
+    const cacheKey = `${txLat.toFixed(1)},${txLon.toFixed(1)}-${rxLat.toFixed(1)},${rxLon.toFixed(1)}-${ssn}-${month}-${hour}-${pw}-${gn}`;
     const now = Date.now();
 
-    // Check cache
-    if (iturhfpropCache.key === cacheKey && now - iturhfpropCache.timestamp < iturhfpropCache.maxAge) {
-      return iturhfpropCache.data;
-    }
+    const cached = ituCacheGet(iturhfpropSingleCache, cacheKey);
+    if (cached) return cached;
 
     try {
-      const url = `${ITURHFPROP_URL}/api/bands?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&hour=${hour}`;
+      const url = `${ITURHFPROP_URL}/api/bands?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&hour=${hour}&txPower=${pw}&txGain=${gn}`;
 
-      // Create abort controller for timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s for single hour
 
       const response = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
@@ -239,18 +107,12 @@ module.exports = function (app, ctx) {
       }
 
       const data = await response.json();
-      // Only log success occasionally to reduce noise
-
-      // Cache the result
-      iturhfpropCache = {
-        data,
-        key: cacheKey,
-        timestamp: now,
-        maxAge: iturhfpropCache.maxAge,
-      };
-
+      ituCacheSet(iturhfpropSingleCache, cacheKey, data);
+      iturhfpropFailCount = 0; // reset on success
       return data;
     } catch (err) {
+      iturhfpropFailCount++;
+      iturhfpropDown = Date.now();
       if (err.name !== 'AbortError') {
         logErrorOnce('Hybrid', `ITURHFProp: ${err.message}`);
       }
@@ -259,200 +121,118 @@ module.exports = function (app, ctx) {
   }
 
   /**
-   * Fetch 24-hour predictions from ITURHFProp
+   * Fetch 24-hour predictions from ITURHFProp.
+   * This calls P.533-14 for all 24 hours and returns per-band, per-hour reliability.
+   * Results are cached for 10 minutes since they change slowly (SSN is daily).
    */
-  async function fetchITURHFPropHourly(txLat, txLon, rxLat, rxLon, ssn, month) {
+  // Round path coordinates to 1 decimal for cache key — paths within ~10km share results
+  function roundPath(lat, lon) {
+    return `${(Math.round(lat * 2) / 2).toFixed(1)},${(Math.round(lon * 2) / 2).toFixed(1)}`;
+  }
+
+  async function fetchITURHFPropHourly(txLat, txLon, rxLat, rxLon, ssn, month, txPower, txGain) {
     if (!ITURHFPROP_URL) return null;
+    if (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
+      return null;
+
+    const pw = Math.round(txPower || 100);
+    const gn = Math.round((txGain || 0) * 10) / 10;
+    const cacheKey = `h-${roundPath(txLat, txLon)}-${roundPath(rxLat, rxLon)}-${ssn}-${month}-${pw}-${gn}`;
+
+    const cached = ituCacheGet(iturhfpropHourlyMap, cacheKey);
+    if (cached) return cached;
 
     try {
-      const url = `${ITURHFPROP_URL}/api/predict/hourly?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}`;
+      const url = `${ITURHFPROP_URL}/api/predict/hourly?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&txPower=${pw}&txGain=${gn}`;
 
-      const response = await fetch(url, { timeout: 60000 }); // 60s timeout for 24-hour calc
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s — P.533 needs time for 24h×10bands
+
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
       if (!response.ok) return null;
 
       const data = await response.json();
+
+      if (data?.hourly?.length > 0) {
+        ituCacheSet(iturhfpropHourlyMap, cacheKey, data);
+        iturhfpropFailCount = 0; // reset on success
+        logDebug(`[ITURHFProp] Cached 24h prediction: ${cacheKey.substring(0, 40)}`);
+      }
+
       return data;
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        logErrorOnce('Hybrid', `ITURHFProp hourly: ${err.message}`);
+      iturhfpropFailCount++;
+      iturhfpropDown = Date.now();
+      if (err.name === 'AbortError') {
+        logErrorOnce('ITURHFProp', `Hourly fetch timed out (attempt ${iturhfpropFailCount})`);
+      } else {
+        logErrorOnce('ITURHFProp', `Hourly fetch: ${err.message} (attempt ${iturhfpropFailCount})`);
       }
       return null;
     }
   }
 
-  /**
-   * Calculate ionospheric correction factor
-   * Compares expected foF2 (from P.533 model) vs actual ionosonde foF2
-   * Returns multiplier to adjust reliability predictions
-   */
-  function calculateIonoCorrection(expectedFoF2, actualFoF2, kIndex) {
-    if (!expectedFoF2 || !actualFoF2) return { factor: 1.0, confidence: 'low' };
-
-    // Ratio of actual to expected ionospheric conditions
-    const ratio = actualFoF2 / expectedFoF2;
-
-    // Geomagnetic correction (storms reduce reliability)
-    const kFactor = kIndex <= 3 ? 1.0 : 1.0 - (kIndex - 3) * 0.1;
-
-    // Combined correction factor
-    // ratio > 1 means better conditions than predicted
-    // ratio < 1 means worse conditions than predicted
-    const factor = ratio * kFactor;
-
-    // Confidence based on how close actual is to expected
-    let confidence;
-    if (Math.abs(ratio - 1) < 0.15) {
-      confidence = 'high'; // Within 15% - model is accurate
-    } else if (Math.abs(ratio - 1) < 0.3) {
-      confidence = 'medium'; // Within 30%
-    } else {
-      confidence = 'low'; // Model significantly off - rely more on ionosonde
-    }
-
-    logDebug(
-      `[Hybrid] Correction factor: ${factor.toFixed(2)} (expected foF2: ${expectedFoF2.toFixed(1)}, actual: ${actualFoF2.toFixed(1)}, K: ${kIndex})`,
-    );
-
-    return { factor, confidence, ratio, kFactor };
-  }
-
-  /**
-   * Apply ionospheric correction to ITURHFProp predictions
-   */
-  function applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi) {
-    if (!iturhfpropData?.bands) return null;
-
-    // Estimate what foF2 ITURHFProp expected (based on SSN/SFI)
-    const ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
-    const expectedFoF2 = 0.9 * Math.sqrt(ssn + 15) * 1.2; // Rough estimate at solar noon
-
-    // Get actual foF2 from ionosonde
-    const actualFoF2 = ionoData?.foF2;
-
-    // Calculate correction
-    const correction = calculateIonoCorrection(expectedFoF2, actualFoF2, kIndex);
-
-    // Apply correction to each band
-    const correctedBands = {};
-    for (const [band, data] of Object.entries(iturhfpropData.bands)) {
-      const baseReliability = data.reliability || 50;
-
-      // Apply correction factor with bounds
-      let correctedReliability = baseReliability * correction.factor;
-      correctedReliability = Math.max(0, Math.min(100, correctedReliability));
-
-      // For high bands, also check if we're above/below MUF
-      const freq = data.freq;
-      if (actualFoF2 && freq > actualFoF2 * 3.5) {
-        // Frequency likely above MUF - reduce reliability
-        correctedReliability *= 0.5;
-      }
-
-      correctedBands[band] = {
-        ...data,
-        reliability: Math.round(correctedReliability),
-        baseReliability: Math.round(baseReliability),
-        correctionApplied: correction.factor !== 1.0,
-        status: correctedReliability >= 70 ? 'GOOD' : correctedReliability >= 40 ? 'FAIR' : 'POOR',
-      };
-    }
-
-    // Correct MUF based on actual ionosonde data
-    let correctedMuf = iturhfpropData.muf;
-    if (actualFoF2 && ionoData?.md) {
-      // Use actual foF2 * M-factor for more accurate MUF
-      const ionoMuf = actualFoF2 * (ionoData.md || 3.0);
-      // Blend ITURHFProp MUF with ionosonde-derived MUF
-      correctedMuf = iturhfpropData.muf * 0.4 + ionoMuf * 0.6;
-    }
-
-    return {
-      bands: correctedBands,
-      muf: Math.round(correctedMuf * 10) / 10,
-      correction,
-      model: 'Hybrid ITU-R P.533-14',
-    };
-  }
-
-  /**
-   * Estimate expected foF2 from P.533 model for a given hour
-   */
-  function estimateExpectedFoF2(ssn, lat, hour) {
-    // Simplified P.533 foF2 estimation
-    // diurnal variation: peak around 14:00 local, minimum around 04:00
-    const hourFactor = 0.6 + 0.4 * Math.cos(((hour - 14) * Math.PI) / 12);
-    const latFactor = 1 - Math.abs(lat) / 150;
-    const ssnFactor = Math.sqrt(ssn + 15);
-
-    return 0.9 * ssnFactor * hourFactor * latFactor;
-  }
-
   // ============================================
-  // ENHANCED PROPAGATION PREDICTION API (Hybrid ITU-R P.533)
+  // PROPAGATION PREDICTION API (ITU-R P.533-14 via ITURHFProp)
   // ============================================
+
+  // Antenna profiles: key → { name, gain (dBi) }
+  // Gain is relative to isotropic (dBi). P.533 uses dBi for both TX and RX antennas.
+  const ANTENNA_PROFILES = {
+    isotropic: { name: 'Isotropic', gain: 0 },
+    dipole: { name: 'Dipole', gain: 2.15 },
+    'vert-qw': { name: 'Vertical 1/4λ', gain: 1.5 },
+    'vert-5/8': { name: 'Vertical 5/8λ', gain: 3.2 },
+    invv: { name: 'Inverted V', gain: 1.8 },
+    ocfd: { name: 'OCFD / Windom', gain: 2.5 },
+    efhw: { name: 'EFHW', gain: 2.0 },
+    g5rv: { name: 'G5RV', gain: 2.0 },
+    yagi2: { name: 'Yagi 2-el', gain: 5.5 },
+    yagi3: { name: 'Yagi 3-el', gain: 8.0 },
+    yagi5: { name: 'Yagi 5-el', gain: 10.5 },
+    hexbeam: { name: 'Hex Beam', gain: 5.0 },
+    cobweb: { name: 'Cobweb', gain: 4.0 },
+    loop: { name: 'Magnetic Loop', gain: -1.0 },
+    longwire: { name: 'Long Wire / Random', gain: 0.5 },
+  };
+
+  // Expose profiles via API so the frontend can enumerate them
+  app.get('/api/propagation/antennas', (req, res) => {
+    res.json(ANTENNA_PROFILES);
+  });
 
   app.get('/api/propagation', async (req, res) => {
-    const { deLat, deLon, dxLat, dxLon, mode, power } = req.query;
+    const { deLat, deLon, dxLat, dxLon, mode, power, antenna } = req.query;
 
     // Calculate signal margin from mode + power
     const txMode = (mode || 'SSB').toUpperCase();
     const txPower = parseFloat(power) || 100;
-    const signalMarginDb = calculateSignalMargin(txMode, txPower);
+    const antennaKey = antenna || 'isotropic';
+    const txGain = ANTENNA_PROFILES[antennaKey]?.gain ?? 0;
+    const signalMarginDb = calculateSignalMargin(txMode, txPower, txGain);
 
-    const useHybrid = ITURHFPROP_URL !== null;
+    const useITURHFProp = ITURHFPROP_URL !== null;
     logDebug(
-      `[Propagation] ${useHybrid ? 'Hybrid' : 'Standalone'} calculation for DE:`,
+      `[Propagation] ${useITURHFProp ? 'P.533-14' : 'Standalone'} calculation for DE:`,
       deLat,
       deLon,
       'to DX:',
       dxLat,
       dxLon,
-      `[${txMode} @ ${txPower}W, margin: ${signalMarginDb.toFixed(1)}dB]`,
+      `[${txMode} @ ${txPower}W, ${ANTENNA_PROFILES[antennaKey]?.name || antennaKey} (${txGain > 0 ? '+' : ''}${txGain}dBi), margin: ${signalMarginDb.toFixed(1)}dB]`,
     );
 
     try {
-      // Get current space weather data
-      let sfi = 150,
-        ssn = 100,
-        kIndex = 2,
-        aIndex = 10;
-
-      try {
-        // Prefer SWPC summary (updates every few hours) + N0NBH for SSN
-        const [summaryRes, kRes] = await Promise.allSettled([
-          fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json'),
-          fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
-        ]);
-
-        if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
-          try {
-            const summary = await summaryRes.value.json();
-            const flux = parseInt(summary?.Flux);
-            if (flux > 0) sfi = flux;
-          } catch {}
-        }
-        // Fallback: N0NBH cache (daily, same as hamqsl.com)
-        if (sfi === 150 && n0nbhCache.data?.solarData?.solarFlux) {
-          const flux = parseInt(n0nbhCache.data.solarData.solarFlux);
-          if (flux > 0) sfi = flux;
-        }
-        // SSN: prefer N0NBH (daily), then estimate from SFI
-        if (n0nbhCache.data?.solarData?.sunspots) {
-          const s = parseInt(n0nbhCache.data.solarData.sunspots);
-          if (s >= 0) ssn = s;
-        } else {
-          ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
-        }
-        if (kRes.status === 'fulfilled' && kRes.value.ok) {
-          const data = await kRes.value.json();
-          if (data?.length > 1) kIndex = parseInt(data[data.length - 1][1]) || 2;
-        }
-      } catch (e) {
-        logDebug('[Propagation] Using default solar values');
+      // Solar data — uses shared 15-minute cache (same as heatmap)
+      const { sfi, ssn, kIndex } = await getSolarData();
+      // Also check N0NBH for more accurate SSN if available
+      let effectiveSSN = ssn;
+      if (n0nbhCache.data?.solarData?.sunspots) {
+        const s = parseInt(n0nbhCache.data.solarData.sunspots);
+        if (s >= 0) effectiveSSN = s;
       }
-
-      // Get real ionosonde data
-      const ionosondeStations = await fetchIonosondeData();
 
       // Calculate path geometry
       const de = { lat: parseFloat(deLat) || 40, lon: parseFloat(deLon) || -75 };
@@ -468,254 +248,198 @@ module.exports = function (app, ctx) {
         if (midLon > 180) midLon -= 360;
       }
 
-      // Get ionospheric data at path midpoint
-      const ionoData = interpolateFoF2(midLat, midLon, ionosondeStations);
-      const hasValidIonoData = !!(ionoData && ionoData.method !== 'no-coverage' && ionoData.foF2);
-
       const currentHour = new Date().getUTCHours();
       const currentMonth = new Date().getMonth() + 1;
 
       logDebug('[Propagation] Distance:', Math.round(distance), 'km');
-      logDebug('[Propagation] Solar: SFI', sfi, 'SSN', ssn, 'K', kIndex);
-      if (hasValidIonoData) {
-        logDebug(
-          '[Propagation] Real foF2:',
-          ionoData.foF2?.toFixed(2),
-          'MHz from',
-          ionoData.nearestStation || ionoData.source,
-        );
+      logDebug('[Propagation] Solar: SFI', sfi, 'SSN', effectiveSSN, 'K', kIndex);
+      const bands = ['160m', '80m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
+      const bandFreqs = [1.8, 3.5, 7, 10, 14, 18, 21, 24, 28];
+
+      // Band frequency lookup: map ITURHFProp frequencies back to band names
+      // ITURHFProp uses slightly different center frequencies (e.g. 2.0 for 160m, 7.1 for 40m)
+      function freqToBand(freq) {
+        let bestBand = null;
+        let bestDist = Infinity;
+        for (let i = 0; i < bandFreqs.length; i++) {
+          const dist = Math.abs(freq - bandFreqs[i]);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestBand = bands[i];
+          }
+        }
+        return bestDist < 2 ? bestBand : null; // within 2 MHz tolerance
       }
 
-      // ===== HYBRID MODE: Try ITURHFProp first =====
-      let hybridResult = null;
-      if (useHybrid) {
-        const iturhfpropData = await fetchITURHFPropPrediction(
+      const predictions = {};
+      let currentBands;
+      let usedITURHFProp = false;
+      let iturhfpropMuf = null;
+
+      // Try ITURHFProp from cache first (instant). If cache miss, check if
+      // service is reachable (quick inline fetch). If that also misses, serve
+      // built-in model immediately and queue ITURHFProp in the background so
+      // the NEXT request for this path gets precise P.533-14 results.
+      if (useITURHFProp) {
+        // Check cache synchronously first — no network call
+        const pw = Math.round(txPower || 100);
+        const gn = Math.round((txGain || 0) * 10) / 10;
+        const hourlyKey = `h-${roundPath(de.lat, de.lon)}-${roundPath(dx.lat, dx.lon)}-${effectiveSSN}-${currentMonth}-${pw}-${gn}`;
+        const cachedHourly = ituCacheGet(iturhfpropHourlyMap, hourlyKey);
+
+        // If not in cache, try a quick inline fetch (10s timeout)
+        const hourlyData =
+          cachedHourly ||
+          (await fetchITURHFPropHourly(de.lat, de.lon, dx.lat, dx.lon, effectiveSSN, currentMonth, txPower, txGain));
+
+        // If still no data and service isn't down, queue background fetch
+        // so the next poll (10 min) gets precise results
+        if (!hourlyData && Date.now() - iturhfpropDown >= ITURHFPROP_BACKOFF) {
+          queueBackgroundFetch(hourlyKey, () =>
+            fetchITURHFPropHourly(de.lat, de.lon, dx.lat, dx.lon, effectiveSSN, currentMonth, txPower, txGain),
+          );
+        }
+
+        if (hourlyData?.hourly?.length === 24) {
+          logDebug('[Propagation] Using ITURHFProp P.533-14 for all 24 hours');
+          usedITURHFProp = true;
+
+          // Build predictions directly from P.533-14 output
+          bands.forEach((band) => {
+            predictions[band] = [];
+          });
+
+          for (const hourEntry of hourlyData.hourly) {
+            const h = hourEntry.hour;
+
+            // Track MUF for current hour
+            if (h === currentHour && hourEntry.muf) {
+              iturhfpropMuf = hourEntry.muf;
+            }
+
+            // Map each frequency result to a band, applying signal margin
+            // P.533 BCR assumes SSB @ 100W isotropic. adjustReliability corrects for
+            // the user's actual mode (FT8 = +34dB), power, and antenna gain.
+            const hourBandReliability = {};
+            for (const freqResult of hourEntry.frequencies || []) {
+              const band = freqToBand(freqResult.freq);
+              if (band) {
+                const raw = Math.max(0, Math.min(99, Math.round(freqResult.reliability)));
+                hourBandReliability[band] = adjustReliability(raw, signalMarginDb);
+              }
+            }
+
+            // Fill in each band for this hour
+            bands.forEach((band) => {
+              const reliability = hourBandReliability[band] ?? 0;
+              predictions[band].push({
+                hour: h,
+                reliability,
+                snr: calculateSNR(reliability),
+              });
+            });
+          }
+
+          // Current bands summary (sorted by reliability)
+          currentBands = bands
+            .map((band, idx) => ({
+              band,
+              freq: bandFreqs[idx],
+              reliability: predictions[band][currentHour]?.reliability || 0,
+              snr: predictions[band][currentHour]?.snr || '-20dB',
+              status: getStatus(predictions[band][currentHour]?.reliability || 0),
+            }))
+            .sort((a, b) => b.reliability - a.reliability);
+        }
+      }
+
+      // If ITURHFProp hourly failed, try single-hour for current state
+      if (!usedITURHFProp && useITURHFProp) {
+        const singleHour = await fetchITURHFPropPrediction(
           de.lat,
           de.lon,
           dx.lat,
           dx.lon,
-          ssn,
+          effectiveSSN,
           currentMonth,
           currentHour,
+          txPower,
+          txGain,
         );
+        if (singleHour?.bands) {
+          logDebug('[Propagation] ITURHFProp hourly unavailable, using single-hour + built-in for 24h chart');
+          iturhfpropMuf = singleHour.muf;
 
-        if (iturhfpropData && hasValidIonoData) {
-          // Full hybrid: ITURHFProp + ionosonde correction
-          hybridResult = applyHybridCorrection(iturhfpropData, ionoData, kIndex, sfi);
-          logDebug('[Propagation] Using HYBRID mode (ITURHFProp + ionosonde correction)');
-        } else if (iturhfpropData) {
-          // ITURHFProp only (no ionosonde coverage)
-          hybridResult = {
-            bands: iturhfpropData.bands,
-            muf: iturhfpropData.muf,
-            model: 'ITU-R P.533-14 (ITURHFProp)',
-          };
-          logDebug('[Propagation] Using ITURHFProp only (no ionosonde coverage)');
+          // Use single-hour data for current bands
+          currentBands = bands
+            .map((band, idx) => {
+              const ituBand = singleHour.bands?.[band];
+              const rel = ituBand ? adjustReliability(Math.round(ituBand.reliability), signalMarginDb) : 0;
+              return {
+                band,
+                freq: bandFreqs[idx],
+                reliability: rel,
+                snr: calculateSNR(rel),
+                status: rel >= 70 ? 'GOOD' : rel >= 40 ? 'FAIR' : rel > 0 ? 'POOR' : 'CLOSED',
+              };
+            })
+            .sort((a, b) => b.reliability - a.reliability);
         }
       }
 
       // ===== FALLBACK: Built-in calculations =====
-      const bands = ['160m', '80m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
-      const bandFreqs = [1.8, 3.5, 7, 10, 14, 18, 21, 24, 28];
+      // Used when ITURHFProp is unavailable (self-hosted without the service)
+      if (!predictions['160m'] || predictions['160m'].length === 0) {
+        logDebug(
+          `[Propagation] Using FALLBACK mode (built-in calculations)${useITURHFProp ? ' — ITURHFProp unavailable' : ''}`,
+        );
 
-      // Generate predictions (hybrid or fallback)
-      const effectiveIonoData = hasValidIonoData ? ionoData : null;
-      const predictions = {};
-      let currentBands;
-
-      if (hybridResult) {
-        // Use hybrid results for current bands
-        currentBands = bands
-          .map((band, idx) => {
-            const hybridBand = hybridResult.bands?.[band];
-            if (hybridBand) {
-              return {
-                band,
-                freq: bandFreqs[idx],
-                reliability: hybridBand.reliability,
-                baseReliability: hybridBand.baseReliability,
-                snr: calculateSNR(hybridBand.reliability),
-                status: hybridBand.status,
-                corrected: hybridBand.correctionApplied,
-              };
-            }
-            // Fallback for bands not in hybrid result
+        bands.forEach((band, idx) => {
+          const freq = bandFreqs[idx];
+          predictions[band] = [];
+          for (let hour = 0; hour < 24; hour++) {
             const reliability = calculateEnhancedReliability(
-              bandFreqs[idx],
+              freq,
               distance,
               midLat,
               midLon,
-              currentHour,
+              hour,
               sfi,
-              ssn,
+              effectiveSSN,
               kIndex,
               de,
               dx,
-              effectiveIonoData,
               currentHour,
               signalMarginDb,
             );
-            return {
+            predictions[band].push({
+              hour,
+              reliability: Math.round(reliability),
+              snr: calculateSNR(reliability),
+            });
+          }
+        });
+
+        if (!currentBands) {
+          currentBands = bands
+            .map((band, idx) => ({
               band,
               freq: bandFreqs[idx],
-              reliability: Math.round(reliability),
-              snr: calculateSNR(reliability),
-              status: getStatus(reliability),
-            };
-          })
-          .sort((a, b) => b.reliability - a.reliability);
-
-        // Generate 24-hour predictions with correction ratios from hybrid data
-        // This makes predictions more accurate by scaling them to match the hybrid model
-        bands.forEach((band, idx) => {
-          const freq = bandFreqs[idx];
-          predictions[band] = [];
-
-          // Calculate built-in reliability for current hour
-          const builtInCurrentReliability = calculateEnhancedReliability(
-            freq,
-            distance,
-            midLat,
-            midLon,
-            currentHour,
-            sfi,
-            ssn,
-            kIndex,
-            de,
-            dx,
-            effectiveIonoData,
-            currentHour,
-            signalMarginDb,
-          );
-
-          // Get hybrid reliability for this band (the accurate one)
-          const hybridBand = hybridResult.bands?.[band];
-          const hybridReliability = hybridBand?.reliability || builtInCurrentReliability;
-
-          // Calculate correction ratio (how much to scale predictions)
-          // Avoid division by zero, and cap the ratio to prevent extreme corrections
-          let correctionRatio = 1.0;
-          if (builtInCurrentReliability > 5) {
-            correctionRatio = hybridReliability / builtInCurrentReliability;
-            // Cap correction ratio to reasonable bounds (0.2x to 3x)
-            correctionRatio = Math.max(0.2, Math.min(3.0, correctionRatio));
-          } else if (hybridReliability > 20) {
-            // Built-in thinks band is closed but hybrid says it's open
-            correctionRatio = 2.0;
-          }
-
-          for (let hour = 0; hour < 24; hour++) {
-            const baseReliability = calculateEnhancedReliability(
-              freq,
-              distance,
-              midLat,
-              midLon,
-              hour,
-              sfi,
-              ssn,
-              kIndex,
-              de,
-              dx,
-              effectiveIonoData,
-              currentHour,
-              signalMarginDb,
-            );
-            // Apply correction ratio and clamp to valid range
-            const correctedReliability = Math.min(99, Math.max(0, Math.round(baseReliability * correctionRatio)));
-            predictions[band].push({
-              hour,
-              reliability: correctedReliability,
-              snr: calculateSNR(correctedReliability),
-            });
-          }
-        });
-      } else {
-        // Full fallback - use built-in calculations
-        logDebug('[Propagation] Using FALLBACK mode (built-in calculations)');
-
-        bands.forEach((band, idx) => {
-          const freq = bandFreqs[idx];
-          predictions[band] = [];
-          for (let hour = 0; hour < 24; hour++) {
-            const reliability = calculateEnhancedReliability(
-              freq,
-              distance,
-              midLat,
-              midLon,
-              hour,
-              sfi,
-              ssn,
-              kIndex,
-              de,
-              dx,
-              effectiveIonoData,
-              currentHour,
-              signalMarginDb,
-            );
-            predictions[band].push({
-              hour,
-              reliability: Math.round(reliability),
-              snr: calculateSNR(reliability),
-            });
-          }
-        });
-
-        currentBands = bands
-          .map((band, idx) => ({
-            band,
-            freq: bandFreqs[idx],
-            reliability: predictions[band][currentHour].reliability,
-            snr: predictions[band][currentHour].snr,
-            status: getStatus(predictions[band][currentHour].reliability),
-          }))
-          .sort((a, b) => b.reliability - a.reliability);
+              reliability: predictions[band][currentHour].reliability,
+              snr: predictions[band][currentHour].snr,
+              status: getStatus(predictions[band][currentHour].reliability),
+            }))
+            .sort((a, b) => b.reliability - a.reliability);
+        }
       }
 
       // Calculate MUF and LUF
-      const currentMuf =
-        hybridResult?.muf || calculateMUF(distance, midLat, midLon, currentHour, sfi, ssn, effectiveIonoData);
+      const currentMuf = iturhfpropMuf || calculateMUF(distance, midLat, midLon, currentHour, sfi, effectiveSSN);
       const currentLuf = calculateLUF(distance, midLat, midLon, currentHour, sfi, kIndex);
 
-      // Build ionospheric response
-      let ionosphericResponse;
-      if (hasValidIonoData) {
-        ionosphericResponse = {
-          foF2: ionoData.foF2?.toFixed(2),
-          mufd: ionoData.mufd?.toFixed(1),
-          hmF2: ionoData.hmF2?.toFixed(0),
-          source: ionoData.nearestStation || ionoData.source,
-          distance: ionoData.nearestDistance,
-          method: ionoData.method,
-          stationsUsed: ionoData.stationsUsed || 1,
-        };
-      } else if (ionoData?.method === 'no-coverage') {
-        ionosphericResponse = {
-          source: 'No ionosonde coverage',
-          reason: ionoData.reason,
-          nearestStation: ionoData.nearestStation,
-          nearestDistance: ionoData.nearestDistance,
-          method: 'estimated',
-        };
-      } else {
-        ionosphericResponse = { source: 'model', method: 'estimated' };
-      }
-
-      // Determine data source description
-      let dataSource;
-      if (hybridResult && hasValidIonoData) {
-        dataSource = 'Hybrid: ITURHFProp (ITU-R P.533-14) + KC2G/GIRO ionosonde';
-      } else if (hybridResult) {
-        dataSource = 'ITURHFProp (ITU-R P.533-14)';
-      } else if (hasValidIonoData) {
-        dataSource = 'KC2G/GIRO Ionosonde Network';
-      } else {
-        dataSource = 'Estimated from solar indices';
-      }
-
       res.json({
-        model: hybridResult?.model || 'Built-in estimation',
-        solarData: { sfi, ssn, kIndex },
-        ionospheric: ionosphericResponse,
+        model: usedITURHFProp ? 'ITU-R P.533-14' : 'Built-in estimation',
+        solarData: { sfi, ssn: effectiveSSN, kIndex },
         muf: Math.round(currentMuf * 10) / 10,
         luf: Math.round(currentLuf * 10) / 10,
         distance: Math.round(distance),
@@ -724,15 +448,13 @@ module.exports = function (app, ctx) {
         hourlyPredictions: predictions,
         mode: txMode,
         power: txPower,
+        antenna: { key: antennaKey, name: ANTENNA_PROFILES[antennaKey]?.name || antennaKey, gain: txGain },
         signalMargin: Math.round(signalMarginDb * 10) / 10,
-        hybrid: {
-          enabled: useHybrid,
-          iturhfpropAvailable: hybridResult !== null,
-          ionosondeAvailable: hasValidIonoData,
-          correctionFactor: hybridResult?.correction?.factor?.toFixed(2),
-          confidence: hybridResult?.correction?.confidence,
+        iturhfprop: {
+          enabled: useITURHFProp,
+          available: usedITURHFProp,
         },
-        dataSource,
+        dataSource: usedITURHFProp ? 'ITURHFProp (ITU-R P.533-14)' : 'Estimated from solar indices',
       });
     } catch (error) {
       logErrorOnce('Propagation', error.message);
@@ -745,8 +467,45 @@ module.exports = function (app, ctx) {
   // ===== PROPAGATION HEATMAP =====
   // Computes reliability grid from DE location to world grid for a selected band
   // Used by VOACAP Heatmap map layer plugin
+
+  // Solar data cache — shared across all heatmap requests so band/mode/power
+  // changes don't each trigger a slow NOAA fetch
+  let solarCache = { sfi: 150, ssn: 100, kIndex: 2, ts: 0 };
+  const SOLAR_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+  async function getSolarData() {
+    const now = Date.now();
+    if (now - solarCache.ts < SOLAR_CACHE_TTL) {
+      return { sfi: solarCache.sfi, ssn: solarCache.ssn, kIndex: solarCache.kIndex };
+    }
+    let sfi = 150,
+      ssn = 100,
+      kIndex = 2;
+    try {
+      const [fluxRes, kRes] = await Promise.allSettled([
+        fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json', { signal: AbortSignal.timeout(5000) }),
+        fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json', {
+          signal: AbortSignal.timeout(5000),
+        }),
+      ]);
+      if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
+        const data = await fluxRes.value.json();
+        if (data?.length) sfi = Math.round(data[data.length - 1].flux || 150);
+      }
+      if (kRes.status === 'fulfilled' && kRes.value.ok) {
+        const data = await kRes.value.json();
+        if (data?.length > 1) kIndex = parseInt(data[data.length - 1][1]) || 2;
+      }
+      ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
+    } catch (e) {
+      logDebug('[PropHeatmap] Using cached/default solar values');
+    }
+    solarCache = { sfi, ssn, kIndex, ts: now };
+    return { sfi, ssn, kIndex };
+  }
+
   const PROP_HEATMAP_CACHE = {};
-  const PROP_HEATMAP_TTL = 5 * 60 * 1000; // 5 minutes
+  const PROP_HEATMAP_TTL = 15 * 60 * 1000; // 15 minutes — propagation changes slowly
   const PROP_HEATMAP_MAX_ENTRIES = 200; // Hard cap on cache entries
 
   // Periodic cleanup: purge expired heatmap cache entries every 10 minutes
@@ -781,15 +540,19 @@ module.exports = function (app, ctx) {
   );
 
   app.get('/api/propagation/heatmap', async (req, res) => {
-    const deLat = parseFloat(req.query.deLat) || 0;
-    const deLon = parseFloat(req.query.deLon) || 0;
+    // Round to whole degrees — propagation doesn't meaningfully differ within 1°,
+    // and this dramatically improves cache hit rate across users
+    const deLat = Math.round(parseFloat(req.query.deLat) || 0);
+    const deLon = Math.round(parseFloat(req.query.deLon) || 0);
     const freq = parseFloat(req.query.freq) || 14; // MHz, default 20m
     const gridSize = Math.max(5, Math.min(20, parseInt(req.query.grid) || 10)); // 5-20° grid
     const txMode = (req.query.mode || 'SSB').toUpperCase();
     const txPower = parseFloat(req.query.power) || 100;
-    const signalMarginDb = calculateSignalMargin(txMode, txPower);
+    const antennaKey = req.query.antenna || 'isotropic';
+    const txGain = ANTENNA_PROFILES[antennaKey]?.gain ?? 0;
+    const signalMarginDb = calculateSignalMargin(txMode, txPower, txGain);
 
-    const cacheKey = `${deLat.toFixed(0)}:${deLon.toFixed(0)}:${freq}:${gridSize}:${txMode}:${txPower}`;
+    const cacheKey = `${deLat.toFixed(0)}:${deLon.toFixed(0)}:${freq}:${gridSize}:${txMode}:${txPower}:${antennaKey}`;
     const now = Date.now();
 
     if (PROP_HEATMAP_CACHE[cacheKey] && now - PROP_HEATMAP_CACHE[cacheKey].ts < PROP_HEATMAP_TTL) {
@@ -797,27 +560,9 @@ module.exports = function (app, ctx) {
     }
 
     try {
-      // Fetch current solar conditions (same as main propagation endpoint)
-      let sfi = 150,
-        ssn = 100,
-        kIndex = 2;
-      try {
-        const [fluxRes, kRes] = await Promise.allSettled([
-          fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
-          fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
-        ]);
-        if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
-          const data = await fluxRes.value.json();
-          if (data?.length) sfi = Math.round(data[data.length - 1].flux || 150);
-        }
-        if (kRes.status === 'fulfilled' && kRes.value.ok) {
-          const data = await kRes.value.json();
-          if (data?.length > 1) kIndex = parseInt(data[data.length - 1][1]) || 2;
-        }
-        ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
-      } catch (e) {
-        logDebug('[PropHeatmap] Using default solar values');
-      }
+      // Solar conditions — cached separately so band/mode/power changes don't
+      // each trigger a slow NOAA round-trip
+      const { sfi, ssn, kIndex } = await getSolarData();
 
       const currentHour = new Date().getUTCHours();
       const de = { lat: deLat, lon: deLon };
@@ -851,7 +596,6 @@ module.exports = function (app, ctx) {
             kIndex,
             de,
             dx,
-            null,
             currentHour,
             signalMarginDb,
           );
@@ -890,51 +634,118 @@ module.exports = function (app, ctx) {
     }
   });
 
-  // Calculate MUF using real ionosonde data or model
-  function calculateMUF(distance, midLat, midLon, hour, sfi, ssn, ionoData) {
+  // ===== MUF MAP =====
+  // Computes MUF from DE to each grid cell using solar indices + path geometry.
+  // Unlike the old ionosonde-based MUF map, this shows path-specific MUF from
+  // your QTH to every point on the globe — more useful for operators.
+  const MUF_MAP_CACHE = {};
+  const MUF_MAP_TTL = 5 * 60 * 1000;
+
+  app.get('/api/propagation/mufmap', async (req, res) => {
+    const deLat = parseFloat(req.query.deLat) || 0;
+    const deLon = parseFloat(req.query.deLon) || 0;
+    const gridSize = Math.max(5, Math.min(20, parseInt(req.query.grid) || 10));
+
+    const cacheKey = `muf-${deLat.toFixed(0)}:${deLon.toFixed(0)}:${gridSize}`;
+    const now = Date.now();
+
+    if (MUF_MAP_CACHE[cacheKey] && now - MUF_MAP_CACHE[cacheKey].ts < MUF_MAP_TTL) {
+      return res.json(MUF_MAP_CACHE[cacheKey].data);
+    }
+
+    try {
+      let sfi = 150,
+        ssn = 100;
+      try {
+        const fluxRes = await fetch('https://services.swpc.noaa.gov/products/summary/10cm-flux.json');
+        if (fluxRes.ok) {
+          const summary = await fluxRes.json();
+          const flux = parseInt(summary?.Flux);
+          if (flux > 0) sfi = flux;
+        }
+        if (n0nbhCache.data?.solarData?.sunspots) {
+          ssn = parseInt(n0nbhCache.data.solarData.sunspots);
+        } else {
+          ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
+        }
+      } catch {
+        logDebug('[MUFMap] Using default solar values');
+      }
+
+      const currentHour = new Date().getUTCHours();
+      const halfGrid = gridSize / 2;
+      const cells = [];
+
+      for (let lat = -85 + halfGrid; lat <= 85 - halfGrid; lat += gridSize) {
+        for (let lon = -180 + halfGrid; lon <= 180 - halfGrid; lon += gridSize) {
+          const distance = haversineDistance(deLat, deLon, lat, lon);
+          if (distance < 200) continue;
+
+          const midLat = (deLat + lat) / 2;
+          let midLon = (deLon + lon) / 2;
+          if (Math.abs(deLon - lon) > 180) {
+            midLon = (deLon + lon + 360) / 2;
+            if (midLon > 180) midLon -= 360;
+          }
+
+          const muf = calculateMUF(distance, midLat, midLon, currentHour, sfi, ssn);
+          cells.push({ lat, lon, muf: Math.round(muf * 10) / 10 });
+        }
+      }
+
+      const result = {
+        deLat,
+        deLon,
+        gridSize,
+        solarData: { sfi, ssn },
+        hour: currentHour,
+        cells,
+        timestamp: new Date().toISOString(),
+      };
+
+      MUF_MAP_CACHE[cacheKey] = { data: result, ts: now };
+      logDebug(`[MUFMap] Computed ${cells.length} cells from ${deLat.toFixed(1)},${deLon.toFixed(1)}`);
+      res.json(result);
+    } catch (error) {
+      logErrorOnce('MUFMap', error.message);
+      res.status(500).json({ error: 'Failed to compute MUF map' });
+    }
+  });
+
+  // Estimate MUF from solar indices and path geometry (fallback when ITURHFProp unavailable)
+  function calculateMUF(distance, midLat, midLon, hour, sfi, ssn) {
     // Local solar time at the path midpoint (not UTC)
     const localHour = (hour + midLon / 15 + 24) % 24;
 
-    // If we have real MUF(3000) data, scale it for actual distance
-    if (ionoData?.mufd) {
-      if (distance < 3500) {
-        // Single hop: MUF increases with distance (lower takeoff angle)
-        return ionoData.mufd * Math.sqrt(distance / 3000);
-      } else {
-        // Multi-hop: effective MUF limited by weakest hop — decreases with hops
-        const hops = Math.ceil(distance / 3500);
-        return ionoData.mufd * Math.pow(0.93, hops - 1);
-      }
-    }
+    // Estimate foF2 (critical frequency of F2 layer) from solar flux.
+    // Empirical fit to ionosonde data:
+    //   foF2_day ≈ 4 + 0.04·SFI (8-12 MHz at SFI 100-200, mid-lat noon)
+    //   foF2_night ≈ 2 + 0.01·SFI (3-4 MHz, drops further at high lat)
+    // Blended by smooth day/night curve peaking at 14:00 local solar time.
+    const absLat = Math.abs(midLat);
+    const latFactor = absLat < 15 ? 1.15 : absLat < 45 ? 1.05 - (absLat - 15) / 120 : 0.8 - (absLat - 45) / 250;
+    const clampedLat = Math.max(0.45, latFactor);
 
-    // If we have foF2, calculate MUF using M(3000)F2 factor
-    if (ionoData?.foF2) {
-      const M = ionoData.md || 3.0;
-      const muf3000 = ionoData.foF2 * M;
+    const foF2_day = (4 + 0.04 * sfi) * clampedLat;
+    const foF2_night = (2 + 0.01 * sfi) * clampedLat;
 
-      if (distance < 3500) {
-        return muf3000 * Math.sqrt(distance / 3000);
-      } else {
-        const hops = Math.ceil(distance / 3500);
-        return muf3000 * Math.pow(0.93, hops - 1);
-      }
-    }
+    // Smooth day/night blend: 1.0 at 14:00 local (F2 peak), ~0 at 02:00
+    const dayBlend = Math.max(0, Math.min(1, 0.5 + 0.5 * Math.cos(((localHour - 14) * Math.PI) / 12)));
+    const foF2_est = foF2_night + (foF2_day - foF2_night) * dayBlend;
 
-    // Fallback: Estimate foF2 from solar indices
-    // foF2 peaks around 14:00 LOCAL solar time, drops to ~1/3 at night
-    const hourFactor = 1 + 0.4 * Math.cos(((localHour - 14) * Math.PI) / 12);
-    const latFactor = 1 - Math.abs(midLat) / 150;
-    const foF2_est = 0.9 * Math.sqrt(ssn + 15) * hourFactor * latFactor;
-
-    const M = 3.0;
+    // M-factor (MUF/foF2 ratio) — depends on elevation angle / distance.
+    // Short paths: high elevation angle → lower M (~2.5)
+    // Long paths (3000km): grazing incidence → M ≈ 3.0-3.3
+    // Very short: M approaches sec(zenith) ≈ 2.0
+    const M = distance < 500 ? 2.5 : distance < 3500 ? 2.5 + 0.7 * (distance / 3500) : 3.2;
     const muf3000 = foF2_est * M;
 
-    if (distance < 3500) {
-      return muf3000 * Math.sqrt(distance / 3000);
+    if (distance <= 3500) {
+      return muf3000;
     } else {
-      // Multi-hop: each additional hop reduces effective MUF by ~7%
+      // Multi-hop: each additional hop reduces effective MUF by ~5%
       const hops = Math.ceil(distance / 3500);
-      return muf3000 * Math.pow(0.93, hops - 1);
+      return muf3000 * Math.pow(0.95, hops - 1);
     }
   }
 
@@ -971,8 +782,8 @@ module.exports = function (app, ctx) {
     // K-index: geomagnetic storms increase D-layer absorption
     const kFactor = 1 + kIndex * 0.15;
 
-    // Base LUF: ~3 MHz for a single-hop night path with low solar flux
-    const baseLuf = 3.0;
+    // Base LUF: ~2 MHz for a single-hop night path with low solar flux
+    const baseLuf = 2.0;
 
     return baseLuf * dayFactor * sfiFactor * hopFactor * latFactor * kFactor;
   }
@@ -994,20 +805,42 @@ module.exports = function (app, ctx) {
   };
 
   /**
-   * Calculate signal margin in dB from mode and power
-   * Used to adjust propagation reliability predictions
+   * Calculate signal margin in dB from mode, power, and antenna gain
    * @param {string} mode - Operating mode (SSB, CW, FT8, etc.)
    * @param {number} powerWatts - TX power in watts
-   * @returns {number} Signal margin in dB relative to SSB at 100W
+   * @param {number} antGain - Antenna gain in dBi (0 = isotropic)
+   * @returns {number} Signal margin in dB relative to SSB at 100W isotropic
    */
-  function calculateSignalMargin(mode, powerWatts) {
+  function calculateSignalMargin(mode, powerWatts, antGain = 0) {
     const modeAdv = MODE_ADVANTAGE_DB[mode] || 0;
     const power = Math.max(0.01, powerWatts || 100);
     const powerOffset = 10 * Math.log10(power / 100); // dB relative to 100W
-    return modeAdv + powerOffset;
+    return modeAdv + powerOffset + (antGain || 0);
   }
 
-  // Enhanced reliability calculation using real ionosonde data
+  /**
+   * Apply signal margin to a base reliability value.
+   * P.533 computes BCR assuming SSB at a fixed power/antenna. This adjusts
+   * the reliability for the user's actual mode (FT8 decodes 34dB weaker than
+   * SSB), power (1kW = +10dB over 100W), and antenna gain.
+   * Uses logistic scaling to stay within 0-99 bounds.
+   */
+  function adjustReliability(baseRel, signalMarginDb) {
+    if (signalMarginDb === 0 || baseRel <= 0) return baseRel;
+    let rel = baseRel;
+    const factor = signalMarginDb / 15; // normalized: ±1 at ±15dB
+    if (factor > 0) {
+      // Boost: push toward 99. Marginal paths benefit most.
+      const headroom = 99 - rel;
+      rel += headroom * (1 - Math.exp(-factor * 1.2));
+    } else {
+      // Penalty: push toward 0.
+      rel -= rel * (1 - Math.exp(factor * 1.2));
+    }
+    return Math.max(0, Math.min(99, Math.round(rel)));
+  }
+
+  // Built-in reliability calculation (fallback when ITURHFProp unavailable)
   function calculateEnhancedReliability(
     freq,
     distance,
@@ -1019,29 +852,10 @@ module.exports = function (app, ctx) {
     kIndex,
     de,
     dx,
-    ionoData,
     currentHour,
     signalMarginDb = 0,
   ) {
-    // Calculate MUF and LUF for this hour
-    // For non-current hours, we need to estimate how foF2 changes
-    let hourIonoData = ionoData;
-
-    if (ionoData && hour !== currentHour) {
-      // Estimate foF2 change based on diurnal variation
-      // foF2 typically varies by factor of 2-3 between day and night
-      const currentHourFactor = 1 + 0.4 * Math.cos(((currentHour - 14) * Math.PI) / 12);
-      const targetHourFactor = 1 + 0.4 * Math.cos(((hour - 14) * Math.PI) / 12);
-      const scaleFactor = targetHourFactor / currentHourFactor;
-
-      hourIonoData = {
-        ...ionoData,
-        foF2: ionoData.foF2 * scaleFactor,
-        mufd: ionoData.mufd ? ionoData.mufd * scaleFactor : null,
-      };
-    }
-
-    const muf = calculateMUF(distance, midLat, midLon, hour, sfi, ssn, hourIonoData);
+    const muf = calculateMUF(distance, midLat, midLon, hour, sfi, ssn);
     const luf = calculateLUF(distance, midLat, midLon, hour, sfi, kIndex);
 
     // Apply signal margin from mode + power to MUF/LUF boundaries.
@@ -1055,37 +869,34 @@ module.exports = function (app, ctx) {
     // Calculate BASE reliability from frequency position relative to effective MUF/LUF
     let reliability = 0;
 
-    if (freq > effectiveMuf * 1.1) {
-      // Well above MUF - very poor
-      reliability = Math.max(0, 30 - (freq - effectiveMuf) * 5);
+    if (freq > effectiveMuf * 1.15) {
+      // Well above MUF - very poor (sporadic-E or scatter only)
+      reliability = Math.max(0, 25 - (freq - effectiveMuf) * 3);
     } else if (freq > effectiveMuf) {
-      // Slightly above MUF - marginal (sometimes works due to scatter)
-      reliability = 30 + ((effectiveMuf * 1.1 - freq) / (effectiveMuf * 0.1)) * 20;
-    } else if (freq < effectiveLuf * 0.8) {
+      // Slightly above MUF - marginal (often works via scatter, sporadic-E)
+      const frac = (freq - effectiveMuf) / (effectiveMuf * 0.15);
+      reliability = 55 - frac * 30;
+    } else if (freq < effectiveLuf * 0.7) {
       // Well below LUF - absorbed
-      reliability = Math.max(0, 20 - (effectiveLuf - freq) * 10);
+      reliability = Math.max(0, 15 - (effectiveLuf - freq) * 5);
     } else if (freq < effectiveLuf) {
       // Near LUF - marginal
-      reliability = 20 + ((freq - effectiveLuf * 0.8) / (effectiveLuf * 0.2)) * 30;
+      reliability = 15 + ((freq - effectiveLuf * 0.7) / (effectiveLuf * 0.3)) * 40;
     } else {
-      // In usable range - calculate optimum
-      // Optimum Working Frequency (OWF) is typically 80-85% of MUF
-      const owf = effectiveMuf * 0.85;
+      // In usable range — this is where most contacts happen
       const range = effectiveMuf - effectiveLuf;
 
       if (range <= 0) {
-        reliability = 30; // Very narrow window
+        reliability = 50; // Narrow window but still usable
       } else {
-        // Higher reliability near OWF, tapering toward MUF and LUF
+        // OWF (Optimum Working Frequency) is ~85% of MUF
         const position = (freq - effectiveLuf) / range; // 0 at LUF, 1 at MUF
-        const optimalPosition = 0.75; // 75% up from LUF = OWF
+        const optimalPosition = 0.8; // 80% up from LUF = OWF
 
         if (position < optimalPosition) {
-          // Below OWF - reliability increases as we approach OWF
-          reliability = 50 + (position / optimalPosition) * 45;
+          reliability = 60 + (position / optimalPosition) * 39;
         } else {
-          // Above OWF - reliability decreases as we approach MUF
-          reliability = 95 - ((position - optimalPosition) / (1 - optimalPosition)) * 45;
+          reliability = 99 - ((position - optimalPosition) / (1 - optimalPosition)) * 39;
         }
       }
     }
@@ -1116,29 +927,29 @@ module.exports = function (app, ctx) {
       }
     }
 
-    // K-index degradation (geomagnetic storms)
-    if (kIndex >= 7) reliability *= 0.1;
-    else if (kIndex >= 6) reliability *= 0.2;
-    else if (kIndex >= 5) reliability *= 0.4;
-    else if (kIndex >= 4) reliability *= 0.6;
-    else if (kIndex >= 3) reliability *= 0.8;
+    // K-index degradation — only significant storms matter
+    // K=0-3: quiet/unsettled (normal), K=4: active, K=5+: storm
+    if (kIndex >= 7) reliability *= 0.15;
+    else if (kIndex >= 6) reliability *= 0.3;
+    else if (kIndex >= 5) reliability *= 0.5;
+    else if (kIndex >= 4) reliability *= 0.75;
+    // K=0-3: no penalty (this is normal conditions)
 
-    // Very long paths (multiple hops) are harder
+    // Multi-hop: slight reduction per additional hop
     const hops = Math.ceil(distance / 3500);
     if (hops > 1) {
-      reliability *= Math.pow(0.92, hops - 1); // ~8% loss per additional hop
+      reliability *= Math.pow(0.95, hops - 1); // ~5% per hop (was 8%)
     }
 
-    // Polar path penalty (auroral absorption)
-    if (Math.abs(midLat) > 60) {
-      reliability *= 0.7;
-      if (kIndex >= 3) reliability *= 0.7; // Additional penalty during storms
+    // Polar path penalty (auroral absorption) — only during disturbed conditions
+    if (Math.abs(midLat) > 65) {
+      reliability *= 0.8;
+      if (kIndex >= 4) reliability *= 0.7; // storms + polar = bad
     }
 
-    // High bands need sufficient solar activity
-    if (freq >= 21 && sfi < 100) reliability *= Math.sqrt(sfi / 100);
-    if (freq >= 28 && sfi < 120) reliability *= Math.sqrt(sfi / 120);
-    if (freq >= 50 && sfi < 150) reliability *= Math.pow(sfi / 150, 1.5);
+    // High bands need sufficient solar activity (but less aggressively)
+    if (freq >= 21 && sfi < 90) reliability *= 0.5 + 0.5 * (sfi / 90);
+    if (freq >= 28 && sfi < 110) reliability *= 0.5 + 0.5 * (sfi / 110);
 
     // Low bands work better at night due to D-layer dissipation
     const localHour = (hour + midLon / 15 + 24) % 24;
@@ -1189,6 +1000,28 @@ module.exports = function (app, ctx) {
     return 'CLOSED';
   }
 
+  // ── Pre-warm cache for DX spots ──────────────────────────────────
+  // Called from dxcluster.js when new DX callsigns appear.
+  // Fires background ITURHFProp requests so that by the time a user
+  // clicks the spot, the precise P.533-14 prediction is already cached.
+  function prewarmPropagation(deLat, deLon, dxLat, dxLon) {
+    if (
+      !ITURHFPROP_URL ||
+      (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
+    )
+      return;
+
+    const currentMonth = new Date().getMonth() + 1;
+    // Use defaults for mode/power — most users are SSB/100W
+    const pw = 100;
+    const gn = 0;
+    getSolarData().then(({ ssn }) => {
+      const key = `h-${roundPath(deLat, deLon)}-${roundPath(dxLat, dxLon)}-${ssn}-${currentMonth}-${pw}-${gn}`;
+      if (ituCacheGet(iturhfpropHourlyMap, key)) return; // already cached
+      queueBackgroundFetch(key, () => fetchITURHFPropHourly(deLat, deLon, dxLat, dxLon, ssn, currentMonth, pw, gn));
+    });
+  }
+
   // Return shared state
-  return { PROP_HEATMAP_CACHE };
+  return { PROP_HEATMAP_CACHE, prewarmPropagation };
 };

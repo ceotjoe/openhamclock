@@ -4,6 +4,22 @@
  */
 import ActivatePanel from './ActivatePanel.jsx';
 
+const _icon = () =>
+  L.divIcon({
+    className: '',
+    html: `<span style="display:inline-block;width:12px;height:12px;background:#ff9632;transform:rotate(45deg);border:1px solid rgba(0,0,0,0.4);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+export const mapDefs = {
+  name: 'SOTA',
+  get icon() {
+    return _icon();
+  },
+  shape: '◆',
+  color: '#ff9632',
+};
+
 export const SOTAPanel = ({
   data,
   loading,
@@ -11,8 +27,8 @@ export const SOTAPanel = ({
   lastChecked,
   showOnMap,
   onToggleMap,
-  showLabelsOnMap,
-  onToggleLabelsOnMap = true,
+  showLabelsOnMap = true,
+  onToggleLabelsOnMap,
   onSpotClick,
   onHoverSpot,
   filters,
@@ -21,8 +37,7 @@ export const SOTAPanel = ({
 }) => {
   return (
     <ActivatePanel
-      name={'SOTA'}
-      shade={'#ff9632'}
+      mapDefs={mapDefs}
       data={data}
       loading={loading}
       lastUpdated={lastUpdated}
