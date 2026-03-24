@@ -53,13 +53,9 @@ Enable by setting `radio.type = "mock"` in `rig-bridge-config.json` or selecting
 
 ## Quick Start
 
-### Option A: Download the Executable (Easiest)
+### Option A: Build a Standalone Executable
 
-1. Download the right file for your OS from the Releases page
-2. Double-click to run
-3. Open **http://localhost:5555** in your browser
-4. Select your radio type and COM port
-5. Click **Save & Connect**
+No Node.js required once built. See the [Building Executables](#building-executables) section for the one-liner for your platform, then double-click the binary in `dist/` and open **http://localhost:5555**.
 
 ### Option B: Run with Node.js
 
@@ -109,19 +105,7 @@ node rig-bridge.js --debug       # Enable raw hex/ASCII CAT traffic logging
 
 #### 2. Configure rig-bridge
 
-Edit `rig-bridge-config.json`:
-
-```json
-{
-  "radio": { "type": "tci" },
-  "tci": {
-    "host": "localhost",
-    "port": 40001,
-    "trx": 0,
-    "vfo": 0
-  }
-}
-```
+Open **http://localhost:5555**, select **TCI** as the radio type, and confirm the host/port. The defaults (`localhost:40001`, trx 0, VFO-A) work for a local TCI server with no changes needed.
 
 | Field  | Description                      | Default     |
 | ------ | -------------------------------- | ----------- |
@@ -155,18 +139,7 @@ The SmartSDR plugin connects directly to a FlexRadio 6000 or 8000 series radio v
 
 ### Setup
 
-Edit `rig-bridge-config.json`:
-
-```json
-{
-  "radio": { "type": "smartsdr" },
-  "smartsdr": {
-    "host": "192.168.1.100",
-    "port": 4992,
-    "sliceIndex": 0
-  }
-}
-```
+Open **http://localhost:5555**, select **SmartSDR**, and enter your FlexRadio's IP address. The port (`4992`) and slice index (`0`) can be left at their defaults unless your setup differs.
 
 | Field        | Description                        | Default         |
 | ------------ | ---------------------------------- | --------------- |
@@ -199,19 +172,7 @@ The RTL-SDR plugin connects to an `rtl_tcp` server for cheap RTL-SDR dongles. It
 rtl_tcp -a 127.0.0.1 -p 1234
 ```
 
-2. Edit `rig-bridge-config.json`:
-
-```json
-{
-  "radio": { "type": "rtl-tcp" },
-  "rtltcp": {
-    "host": "127.0.0.1",
-    "port": 1234,
-    "sampleRate": 2400000,
-    "gain": "auto"
-  }
-}
-```
+2. Open **http://localhost:5555**, select **RTL-SDR**, and confirm the host/port match your `rtl_tcp` server. All defaults work for local use with no changes needed.
 
 | Field        | Description                                     | Default     |
 | ------------ | ----------------------------------------------- | ----------- |
@@ -313,7 +274,7 @@ By default the relay uses **unicast** — WSJT-X sends packets directly to `127.
 If you want multiple applications on the same machine or LAN to receive WSJT-X packets simultaneously, enable multicast:
 
 1. In WSJT-X: **File → Settings → Reporting → UDP Server** — set the address to `224.0.0.1`
-2. In `rig-bridge-config.json` (or via the setup UI at `http://localhost:5555`):
+2. In the setup UI at **http://localhost:5555** (or `rig-bridge-config.json` if you prefer manual config):
 
 ```json
 {
