@@ -43,6 +43,13 @@ export const RigProvider = ({ children, rigConfig }) => {
   // Construct URL from config or default
   const rigUrl = buildRigUrl(rigConfig);
 
+  // Build auth headers — only set when a token is configured
+  const apiToken = rigConfig?.apiToken?.trim() || '';
+  const rigHeaders = {
+    'Content-Type': 'application/json',
+    ...(apiToken ? { 'X-RigBridge-Token': apiToken } : {}),
+  };
+
   // Server-side health check proxy — avoids CORS, diagnoses connection issues
   const checkRigBridgeHealth = useCallback(async () => {
     try {
@@ -62,13 +69,6 @@ export const RigProvider = ({ children, rigConfig }) => {
       // Server-side proxy not available (cloud instance, etc.)
     }
   }, [rigConfig, apiToken]);
-
-  // Build auth headers — only set when a token is configured
-  const apiToken = rigConfig?.apiToken?.trim() || '';
-  const rigHeaders = {
-    'Content-Type': 'application/json',
-    ...(apiToken ? { 'X-RigBridge-Token': apiToken } : {}),
-  };
 
   // Connect to SSE Stream
   useEffect(() => {
