@@ -19,7 +19,7 @@
 
 'use strict';
 
-const VERSION = '1.2.0';
+const VERSION = '2.0.0';
 
 const { config, loadConfig, applyCliArgs } = require('./core/config');
 const { updateState, state, onStateChange, removeStateChangeListener } = require('./core/state');
