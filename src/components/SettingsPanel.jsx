@@ -4730,6 +4730,71 @@ export const SettingsPanel = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Cloud Relay Setup */}
+                <div
+                  style={{
+                    background: 'rgba(34, 197, 94, 0.08)',
+                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    Cloud Relay
+                  </div>
+                  <div
+                    style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: 1.4 }}
+                  >
+                    Running OpenHamClock in the cloud? The Cloud Relay connects your local rig-bridge to this server,
+                    enabling click-to-tune, PTT, WSJT-X decodes, and APRS from anywhere.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const rigBridgeUrl = `${rigHost.replace(/\/$/, '')}:${rigPort}`;
+                      try {
+                        const res = await fetch('/api/rig-bridge/relay/configure', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ rigBridgeUrl, rigBridgeToken: rigApiToken }),
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          alert(`Cloud Relay configured! Session: ${data.session}`);
+                        } else {
+                          alert(`Error: ${data.error}`);
+                        }
+                      } catch (e) {
+                        alert(`Failed to configure cloud relay: ${e.message}`);
+                      }
+                    }}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      color: '#22c55e',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Connect Cloud Relay
+                  </button>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '6px', opacity: 0.7 }}>
+                    Requires rig-bridge running locally and RIG_BRIDGE_RELAY_KEY set on this server.
+                  </div>
+                </div>
               </>
             )}
           </div>
