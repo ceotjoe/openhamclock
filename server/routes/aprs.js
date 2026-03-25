@@ -79,6 +79,96 @@ module.exports = function (app, ctx) {
     return { tokens, cleanComment };
   }
 
+  // Parse APRS telemetry frames
+  // T#seq,val1,val2,val3,val4,val5,bits — analog values + digital status
+  // PARM/UNIT/EQNS messages define parameter names, units, and equations
+  const telemetryDefs = new Map(); // callsign → { params, units, eqns }
+  const telemetryData = new Map(); // callsign → { values[], bits, seq, timestamp }
+
+  function parseAprsTelemetry(line) {
+    try {
+      const headerEnd = line.indexOf(':');
+      if (headerEnd < 0) return null;
+
+      const header = line.substring(0, headerEnd);
+      const payload = line.substring(headerEnd + 1);
+      const callsign = header.split('>')[0].split('-')[0].trim();
+
+      // T# telemetry data frame
+      if (payload.startsWith('T#')) {
+        const parts = payload.substring(2).split(',');
+        if (parts.length < 6) return null;
+        const seq = parts[0];
+        const values = parts.slice(1, 6).map((v) => parseFloat(v) || 0);
+        const bits = parts[5] ? parts[5].replace(/[^01]/g, '') : '';
+
+        const def = telemetryDefs.get(callsign) || {};
+        const entry = {
+          call: callsign,
+          seq,
+          values,
+          bits,
+          timestamp: Date.now(),
+          params: def.params || ['A1', 'A2', 'A3', 'A4', 'A5'],
+          units: def.units || ['', '', '', '', ''],
+        };
+
+        // Apply equations if defined: val = a*x^2 + b*x + c
+        if (def.eqns) {
+          entry.computed = values.map((v, i) => {
+            const e = def.eqns[i];
+            if (!e) return v;
+            return e[0] * v * v + e[1] * v + e[2];
+          });
+        }
+
+        telemetryData.set(callsign, entry);
+        return { type: 'data', ...entry };
+      }
+
+      // PARM — parameter names
+      if (payload.startsWith(':') && payload.includes(':PARM.')) {
+        const parms = payload.split(':PARM.')[1];
+        if (parms) {
+          const def = telemetryDefs.get(callsign) || {};
+          def.params = parms.split(',').map((s) => s.trim());
+          telemetryDefs.set(callsign, def);
+          return { type: 'parm', call: callsign, params: def.params };
+        }
+      }
+
+      // UNIT — parameter units
+      if (payload.startsWith(':') && payload.includes(':UNIT.')) {
+        const units = payload.split(':UNIT.')[1];
+        if (units) {
+          const def = telemetryDefs.get(callsign) || {};
+          def.units = units.split(',').map((s) => s.trim());
+          telemetryDefs.set(callsign, def);
+          return { type: 'unit', call: callsign, units: def.units };
+        }
+      }
+
+      // EQNS — coefficient equations (a,b,c for each of 5 channels)
+      if (payload.startsWith(':') && payload.includes(':EQNS.')) {
+        const eqns = payload.split(':EQNS.')[1];
+        if (eqns) {
+          const coeffs = eqns.split(',').map((s) => parseFloat(s) || 0);
+          const def = telemetryDefs.get(callsign) || {};
+          def.eqns = [];
+          for (let i = 0; i < 5; i++) {
+            def.eqns.push([coeffs[i * 3] || 0, coeffs[i * 3 + 1] || 1, coeffs[i * 3 + 2] || 0]);
+          }
+          telemetryDefs.set(callsign, def);
+          return { type: 'eqns', call: callsign, eqns: def.eqns };
+        }
+      }
+
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Parse APRS message packets (addressed messages + bulletins)
   // Format: :ADDRESSEE:message text{msgid
   // Bulletins: :BLN1     :bulletin text
@@ -283,6 +373,14 @@ module.exports = function (app, ctx) {
             }
           }
         } else {
+          // Try parsing as telemetry
+          const telem = parseAprsTelemetry(trimmed);
+          if (telem && telem.type === 'data') {
+            logDebug(
+              `[APRS] Telemetry from ${telem.call}: ${telem.params.map((p, i) => `${p}=${telem.computed?.[i] ?? telem.values[i]}`).join(', ')}`,
+            );
+          }
+
           // Try parsing as a message (addressed message or bulletin)
           const msg = parseAprsMessage(trimmed);
           if (msg) {
@@ -461,6 +559,20 @@ module.exports = function (app, ctx) {
     if (!callsign) return res.status(400).json({ error: 'Missing callsign' });
     netRoster.delete(callsign.toUpperCase());
     res.json({ ok: true });
+  });
+
+  // REST endpoint: GET /api/aprs/telemetry — telemetry data from all stations
+  app.get('/api/aprs/telemetry', (req, res) => {
+    const callsign = req.query.callsign;
+    if (callsign) {
+      const data = telemetryData.get(callsign.toUpperCase());
+      return res.json(data || { error: 'No telemetry for this callsign' });
+    }
+    const all = [];
+    for (const [, entry] of telemetryData) {
+      all.push(entry);
+    }
+    res.json({ count: all.length, telemetry: all });
   });
 
   // REST endpoint: POST /api/aprs/message — send APRS message via rig-bridge
