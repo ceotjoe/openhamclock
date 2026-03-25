@@ -66,6 +66,7 @@ const descriptor = {
     let consecutiveErrors = 0;
     let lastState = {};
     let pendingDecodes = []; // Batched decodes to push
+    let pendingAprs = []; // Batched APRS packets to push
 
     function makeRequest(urlStr, method, body, callback) {
       let parsed;
@@ -120,21 +121,25 @@ const descriptor = {
       };
 
       const hasDecodes = pendingDecodes.length > 0;
+      const hasAprs = pendingAprs.length > 0;
       const stateChanged =
         currentState.freq !== lastState.freq ||
         currentState.mode !== lastState.mode ||
         currentState.ptt !== lastState.ptt ||
         currentState.connected !== lastState.connected;
 
-      // Only push if state changed or there are decodes to send
-      if (!stateChanged && !hasDecodes) return;
+      // Only push if state changed or there's data to send
+      if (!stateChanged && !hasDecodes && !hasAprs) return;
       lastState = { ...currentState };
 
-      // Include batched decodes in the push
+      // Include batched data in the push
       const payload = { ...currentState };
       if (hasDecodes) {
-        payload.decodes = pendingDecodes.splice(0, 50); // Send up to 50 at a time
+        payload.decodes = pendingDecodes.splice(0, 50);
         totalDecodes += payload.decodes.length;
+      }
+      if (hasAprs) {
+        payload.aprsPackets = pendingAprs.splice(0, 50);
       }
 
       makeRequest(`${serverUrl}/api/rig-bridge/relay/state`, 'POST', payload, (err, status) => {
@@ -277,7 +282,11 @@ const descriptor = {
           // Cap pending queue
           if (pendingDecodes.length > 200) pendingDecodes.splice(0, pendingDecodes.length - 200);
         });
-        console.log('[CloudRelay] Subscribed to plugin bus (decodes, status, QSOs)');
+        pluginBus.on('aprs', (packet) => {
+          pendingAprs.push(packet);
+          if (pendingAprs.length > 200) pendingAprs.splice(0, pendingAprs.length - 200);
+        });
+        console.log('[CloudRelay] Subscribed to plugin bus (decodes, APRS, status, QSOs)');
       }
     }
 
