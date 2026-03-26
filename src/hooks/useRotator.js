@@ -98,7 +98,13 @@ export default function useRotator({ endpointUrl, pollMs = 2000, staleMs = 5000,
 
       try {
         const res = await fetch(endpointUrl, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          // Server returned an error — back off to avoid console spam.
+          // 404/503 = endpoint not available; 500 = server error; all treated the same.
+          setLastError('Unable to reach rotator service');
+          noneUntilRef.current = Date.now() + 30_000;
+          return;
+        }
 
         const data = await res.json();
         if (typeof data?.live === 'boolean') setLive(data.live);
@@ -117,16 +123,14 @@ export default function useRotator({ endpointUrl, pollMs = 2000, staleMs = 5000,
 
         if (data?.live === false) {
           // Provider configured, but not currently connected/running
-          setAvailable(true); // provider exists
+          setAvailable(true);
           setSource(String(data?.source ?? 'unknown'));
           setLastError(data?.error ? String(data.error) : null);
 
-          // Mark as disconnected immediately
           setLastUpdate(0);
           setAzimuth(null);
           setLastGoodAzimuth(null);
 
-          // Retry soon (no need to wait 30s here)
           noneUntilRef.current = Date.now() + 2000;
           return;
         }
@@ -148,7 +152,9 @@ export default function useRotator({ endpointUrl, pollMs = 2000, staleMs = 5000,
 
         setLastError(null);
       } catch {
+        // Network error (server unreachable) — back off to avoid console spam
         setLastError('Unable to reach rotator service');
+        noneUntilRef.current = Date.now() + 30_000;
       }
     }
 
