@@ -22,6 +22,7 @@ import {
   DXpeditionPanel,
   PSKReporterPanel,
   APRSPanel,
+  MeshComPanel,
   WeatherPanel,
   AmbientPanel,
   AnalogClockPanel,
@@ -101,6 +102,7 @@ export const DockableApp = ({
   pskReporter,
   wsjtx,
   aprsData,
+  meshcomData,
   filteredPskSpots,
   wsjtxMapSpots,
 
@@ -138,6 +140,7 @@ export const DockableApp = ({
   togglePSKPaths,
   toggleWSJTX,
   toggleAPRS,
+  toggleMeshCom,
   toggleRotatorBearing,
   hoveredSpot,
   setHoveredSpot,
@@ -284,6 +287,7 @@ export const DockableApp = ({
   const toggleWSJTXEff = useInternalMapLayers ? internalMap.toggleWSJTX : toggleWSJTX;
   const toggleRotatorBearingEff = useInternalMapLayers ? internalMap.toggleRotatorBearing : toggleRotatorBearing;
   const toggleAPRSEff = useInternalMapLayers ? internalMap.toggleAPRS : toggleAPRS;
+  const toggleMeshComEff = useInternalMapLayers ? internalMap.toggleMeshCom : toggleMeshCom;
 
   // Per-panel zoom levels (persisted)
   const [panelZoom, setPanelZoom] = useState(() => {
@@ -438,6 +442,7 @@ export const DockableApp = ({
       'id-timer': { name: 'ID Timer', icon: '📢' },
       keybindings: { name: 'Keyboard Shortcuts', icon: '⌨️' },
       meshtastic: { name: 'Meshtastic', icon: '📡' },
+      meshcom: { name: 'MeshCom', icon: '🔗' },
       'digital-modes': { name: 'Digital Modes', icon: '📻', group: 'Rig Bridge' },
       winlink: { name: 'Winlink', icon: '📬', group: 'Rig Bridge' },
     };
@@ -677,6 +682,8 @@ export const DockableApp = ({
         showAPRS={mapLayersEff.showAPRS}
         aprsStations={aprsData?.filteredStations}
         aprsWatchlistCalls={aprsData?.allWatchlistCalls}
+        showMeshCom={mapLayersEff.showMeshCom}
+        meshcomNodes={meshcomData?.nodes}
         // ✅ Rotator bearing overlay support
         showRotatorBearing={mapLayersEff.showRotatorBearing}
         rotatorAzimuth={rot.azimuth}
@@ -976,6 +983,17 @@ export const DockableApp = ({
 
         case 'meshtastic':
           content = <MeshtasticPanel />;
+          break;
+
+        case 'meshcom':
+          content = (
+            <MeshComPanel
+              showOnMap={mapLayersEff.showMeshCom}
+              onToggleMap={toggleMeshComEff}
+              onHoverSpot={setHoveredSpot}
+              onSpotClick={handleSpotClick}
+            />
+          );
           break;
 
         case 'digital-modes':

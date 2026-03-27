@@ -35,6 +35,7 @@ import {
   usePSKReporter,
   useWSJTX,
   useAPRS,
+  useMeshCom,
   useEmcommData,
 } from './hooks';
 
@@ -256,6 +257,7 @@ const App = () => {
     toggleDXNews,
     toggleRotatorBearing,
     toggleAPRS,
+    toggleMeshCom,
   } = useMapLayers();
 
   const {
@@ -334,6 +336,7 @@ const App = () => {
   });
   const wsjtx = useWSJTX();
   const aprsData = useAPRS();
+  const meshcomData = useMeshCom();
   const emcommData = useEmcommData({
     location: config.location,
     enabled: config.layout === 'emcomm',
@@ -520,6 +523,7 @@ const App = () => {
     pskReporter,
     wsjtx,
     aprsData,
+    meshcomData,
     emcommData,
     filteredPskSpots,
     wsjtxMapSpots,
@@ -556,6 +560,7 @@ const App = () => {
     toggleDXNews,
     toggleRotatorBearing,
     toggleAPRS,
+    toggleMeshCom,
     hoveredSpot,
     setHoveredSpot,
     filteredSatellites,
