@@ -436,6 +436,15 @@ All digital mode plugins are **bidirectional** — OHC can send replies, halt TX
 
 In your digital mode software, set UDP Server to `127.0.0.1` and the port shown above.
 
+### MeshCom UDP Plugin
+
+Receives MeshCom LoRa mesh network packets and forwards them to OHC. See [MeshCom UDP Plugin](#meshcom-udp-plugin) for full setup instructions.
+
+| Setting   | Default   | Description                     |
+| --------- | --------- | ------------------------------- |
+| UDP Port  | `1799`    | Port MeshCom nodes broadcast to |
+| Bind Host | `0.0.0.0` | Network interface to listen on  |
+
 ### APRS TNC Plugin
 
 Connects to a local Direwolf or hardware TNC via KISS protocol for RF-based APRS — no internet required.
@@ -457,6 +466,117 @@ Connects to a local Direwolf or hardware TNC via KISS protocol for RF-based APRS
 4. APRS packets from nearby stations appear in OHC's APRS panel
 
 The APRS TNC runs alongside APRS-IS (internet) for dual-path coverage. When internet goes down, local RF keeps working.
+
+### MeshCom UDP Plugin
+
+Receives JSON packets broadcast by [MeshCom](https://github.com/icssw-org/MeshCom-Firmware) LoRa mesh network nodes over UDP and forwards them to OpenHamClock. MeshCom nodes appear on the OHC world map and in the dedicated MeshCom panel with live positions, battery levels, weather/telemetry, and text messages.
+
+#### How it works
+
+MeshCom firmware can broadcast its status packets as UDP JSON to the local network (`--extudp on`). Rig Bridge binds a UDP socket on port 1799, receives those packets, deduplicates them (the mesh rebroadcasts each packet via multiple paths), and forwards them to OpenHamClock via the Cloud Relay plugin — no direct HTTP connection from the plugin itself is needed.
+
+```
+MeshCom node (LoRa)
+      │ UDP JSON broadcast
+      ▼
+Rig Bridge :1799 (meshcom-udp plugin)
+      │ dedup → normalise → bus.emit('meshcom')
+      ▼
+Cloud Relay plugin ──HTTPS──→ OpenHamClock server
+                                    └─ /api/meshcom/nodes
+                                    └─ /api/meshcom/messages
+                                    └─ MeshCom panel + map
+```
+
+#### MeshCom firmware setup
+
+Enable UDP output in your MeshCom node firmware. The exact method depends on your firmware version and hardware — typical options:
+
+- **Serial/USB console:** `--extudp on` and `--extudpip 255.255.255.255`
+- **Web config UI:** Enable _External UDP_, set IP to `255.255.255.255` (broadcast) or the specific IP of the machine running rig-bridge
+
+The node will broadcast JSON packets to UDP port 1799 on the local network.
+
+#### Rig Bridge setup
+
+1. Open **http://localhost:5555** → **Plugins** tab
+2. Enable **MeshCom UDP Receiver**
+3. Set the **UDP Listen Port** (default `1799`) — must match the firmware's UDP destination port
+4. Click **Save**
+
+You should see in the console:
+
+```
+[MeshCom-UDP] Listening on 0.0.0.0:1799
+```
+
+When packets arrive:
+
+```
+[MeshCom-UDP] RX: {"type":"pos","src":"OE1XYZ-12","lat":48.2,"lat_dir":"N",...}
+```
+
+#### Config reference
+
+| Field      | Description                                 | Default           |
+| ---------- | ------------------------------------------- | ----------------- |
+| `enabled`  | Activate the plugin on startup              | `false`           |
+| `bindPort` | UDP port to listen on                       | `1799`            |
+| `bindHost` | Network interface to bind (`0.0.0.0` = all) | `0.0.0.0`         |
+| `sendHost` | Destination IP for outgoing messages        | `255.255.255.255` |
+| `sendPort` | Destination UDP port for outgoing messages  | `1799`            |
+| `verbose`  | Log every received packet to the console    | `false`           |
+
+Manual config in `rig-bridge-config.json`:
+
+```json
+{
+  "meshcom": {
+    "enabled": true,
+    "bindPort": 1799,
+    "bindHost": "0.0.0.0",
+    "sendHost": "255.255.255.255",
+    "sendPort": 1799,
+    "verbose": false
+  }
+}
+```
+
+#### Packet types
+
+| Type    | Description                                                                |
+| ------- | -------------------------------------------------------------------------- |
+| `pos`   | Node position — callsign, lat/lon, altitude, battery                       |
+| `msg`   | Text message — source, destination (callsign, group, or `*` for broadcast) |
+| `telem` | Weather/sensor data — temperature, humidity, pressure, CO₂, RSSI, SNR      |
+
+Altitude is converted from feet (MeshCom GPS) to metres automatically. Firmware version strings are normalised across local-node and relay-hop encoding variants.
+
+#### Deduplication
+
+LoRa mesh networks rebroadcast each packet via multiple paths, so the same packet can arrive many times within seconds. The plugin deduplicates by `hw_id + msg_id` with a 60-second TTL — only the first copy is forwarded.
+
+#### OpenHamClock data retention
+
+On the OHC server, received data is held in memory:
+
+| Data     | Retention                                                        | Env override                    |
+| -------- | ---------------------------------------------------------------- | ------------------------------- |
+| Nodes    | 60 minutes after last packet (stale nodes removed automatically) | `MESHCOM_NODE_MAX_AGE_MINUTES`  |
+| Messages | 8 hours (oldest messages pruned every minute)                    | `MESHCOM_MESSAGE_MAX_AGE_HOURS` |
+
+#### Troubleshooting
+
+| Problem                          | Solution                                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| No packets arriving              | Verify `--extudp on` is set in MeshCom firmware; check UDP destination IP reaches the rig-bridge host                                |
+| Port already in use              | Another app is listening on 1799 — change `bindPort` in rig-bridge and in firmware                                                   |
+| Duplicate packets in OHC         | Normal — dedup is active; if you see duplicates, check that `hw_id` is present in firmware packets                                   |
+| Nodes appear but no map marker   | Node has no GPS fix yet — position packets without valid coordinates are stored but not mapped                                       |
+| Altitude shows wrong value       | Plugin converts MeshCom GPS feet → metres automatically; values should be correct                                                    |
+| MeshCom panel not visible in OHC | Requires Cloud Relay to be configured and connected (see [Scenario 3](#scenario-3-cloud-relay-ohc-on-openhamclockcom-radio-at-home)) |
+
+---
 
 ### Rotator Plugin
 
@@ -613,6 +733,7 @@ rig-bridge/
     ├── jtdx.js            # JTDX UDP listener (FT8/JT65 enhanced decoding)
     ├── js8call.js         # JS8Call UDP listener (JS8 keyboard messaging)
     ├── aprs-tnc.js        # APRS KISS TNC plugin (Direwolf / hardware TNC)
+    ├── meshcom-udp.js     # MeshCom LoRa mesh UDP receiver (port 1799)
     ├── rotator.js         # Antenna rotator via rotctld (Hamlib)
     ├── winlink-gateway.js # Winlink RMS gateway discovery + Pat client
     └── cloud-relay.js     # Cloud relay — bridges local rig-bridge to cloud OHC
