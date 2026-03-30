@@ -69,14 +69,22 @@ export const useSatellites = (observerLocation) => {
           const alt = positionGd.height;
 
           // Calculate look angles
-          const lookAngles = satellite.ecfToLookAngles(
-            observerGd,
-            satellite.eciToEcf(positionAndVelocity.position, gmst),
-          );
-
+          const positionEcf = satellite.eciToEcf(positionAndVelocity.position, gmst);
+          const lookAngles = satellite.ecfToLookAngles(observerGd, positionEcf);
           const azimuth = satellite.radiansToDegrees(lookAngles.azimuth);
           const elevation = satellite.radiansToDegrees(lookAngles.elevation);
           const rangeSat = lookAngles.rangeSat;
+
+          // Calculate range-rate and doppler factor, only if satellite is above horizon
+          let dopplerFactor = 0;
+          let rangeRate = 0;
+          if (elevation > 0) {
+            const observerEcf = satellite.geodeticToEcf(observerGd);
+            const velocityEcf = satellite.eciToEcf(positionAndVelocity.velocity, gmst);
+            dopplerFactor = satellite.dopplerFactor(observerEcf, positionEcf, velocityEcf);
+            const c = 299792.458; // Speed of light [km/s]
+            rangeRate = (1 - dopplerFactor) * c; // [km/s]
+          }
 
           // Calculate speed from ECI velocity vector (km/s)
           let speedKmH = 0;
@@ -117,7 +125,9 @@ export const useSatellites = (observerLocation) => {
             azimuth: Math.round(azimuth),
             elevation: Math.round(elevation),
             range: Math.round(rangeSat),
-            visible: elevation > 0,
+            rangeRate,
+            dopplerFactor,
+            isVisible: elevation > 0,
             isPopular: tle.priority <= 2,
             track,
             footprintRadius: Math.round(footprintRadius),
