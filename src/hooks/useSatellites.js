@@ -6,6 +6,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as satellite from 'satellite.js';
 
+function round(value, decimals) {
+  const factor = Math.pow(10, decimals);
+  return Math.round(value * factor) / factor;
+}
+
 export const useSatellites = (observerLocation) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +117,6 @@ export const useSatellites = (observerLocation) => {
           }
 
           // Calculate footprint radius (visibility circle)
-          // Formula: radius = Earth_radius * arccos(Earth_radius / (Earth_radius + altitude))
           const earthRadius = 6371; // km
           const footprintRadius = earthRadius * Math.acos(earthRadius / (earthRadius + alt));
 
@@ -120,13 +124,13 @@ export const useSatellites = (observerLocation) => {
             name: tle.name || name,
             lat,
             lon,
-            alt: Math.round(alt),
-            speedKmH: Math.round(speedKmH),
-            azimuth: Math.round(azimuth),
-            elevation: Math.round(elevation),
-            range: Math.round(rangeSat),
-            rangeRate,
-            dopplerFactor,
+            alt: round(alt, 1),
+            speedKmH: round(speedKmH, 1),
+            azimuth: round(azimuth, 0),
+            elevation: round(elevation, 0),
+            range: round(rangeSat, 1),
+            rangeRate: round(rangeRate, 3),
+            dopplerFactor: round(dopplerFactor, 9),
             isVisible: elevation > 0,
             isPopular: tle.priority <= 2,
             track,

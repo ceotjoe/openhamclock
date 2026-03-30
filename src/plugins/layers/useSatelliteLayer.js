@@ -245,13 +245,14 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
           const isMetric = allUnits.dist === 'metric';
           const distanceUnitsStr = isMetric ? 'km' : 'miles';
           const speedUnitsStr = isMetric ? 'km/h' : 'mph';
+          const rangeRateUnitsStr = isMetric ? 'km/s' : 'miles/s';
           const km_to_miles_factor = 0.621371;
 
-          let speed = isMetric ? Math.round(sat.speedKmH || 0) : Math.round((sat.speedKmH || 0) * km_to_miles_factor);
+          let speed = Math.round((sat.speedKmH || 0) * (isMetric ? 1 : km_to_miles_factor));
           let speedStr = `${speed.toLocaleString()} ${speedUnitsStr}`;
           speedStr = `${sat.speedKmH ? speedStr : 'N/A'}`;
 
-          let altitude = isMetric ? Math.round(sat.alt) : Math.round(sat.alt * km_to_miles_factor);
+          let altitude = Math.round(sat.alt * (isMetric ? 1 : km_to_miles_factor));
           let altitudeStr = `${altitude.toLocaleString()} ${distanceUnitsStr}`;
 
           return `
@@ -271,9 +272,9 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
             ${
               isVisible
                 ? `
-              <tr><td style="color:#888; padding:2px 0;">range:</td><td align="right" style="padding:2px 0;">${sat.range} km</td></tr>
-              <tr><td style="color:#888; padding:2px 0;">range rate:</td><td align="right" style="padding:2px 0;">${sat.rangeRate.toFixed(2)} km/s</td></tr>
-              <tr><td style="color:#888; padding:2px 0;">doppler factor:</td><td align="right" style="padding:2px 0;">${sat.dopplerFactor.toFixed(7)}</td></tr>
+              <tr><td style="color:#888; padding:2px 0;">Range:</td><td align="right" style="padding:2px 0;">${(sat.range * (isMetric ? 1 : km_to_miles_factor)).toFixed(0)} ${distanceUnitsStr}</td></tr>
+              <tr><td style="color:#888; padding:2px 0;">Range Rate:</td><td align="right" style="padding:2px 0;">${(sat.rangeRate * (isMetric ? 1 : km_to_miles_factor)).toFixed(2)} ${rangeRateUnitsStr}</td></tr>
+              <tr><td style="color:#888; padding:2px 0;">Doppler Factor:</td><td align="right" style="padding:2px 0;">${sat.dopplerFactor.toFixed(7)}</td></tr>
             `
                 : ``
             }
