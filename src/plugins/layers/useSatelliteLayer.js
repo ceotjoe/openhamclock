@@ -272,9 +272,9 @@ export const useLayer = ({ map, enabled, satellites, setSatellites, opacity, con
             ${
               isVisible
                 ? `
-              <tr><td style="color:#888; padding:2px 0;">Range:</td><td align="right" style="padding:2px 0;">${(sat.range * (isMetric ? 1 : km_to_miles_factor)).toFixed(0)} ${distanceUnitsStr}</td></tr>
-              <tr><td style="color:#888; padding:2px 0;">Range Rate:</td><td align="right" style="padding:2px 0;">${(sat.rangeRate * (isMetric ? 1 : km_to_miles_factor)).toFixed(2)} ${rangeRateUnitsStr}</td></tr>
-              <tr><td style="color:#888; padding:2px 0;">Doppler Factor:</td><td align="right" style="padding:2px 0;">${sat.dopplerFactor.toFixed(7)}</td></tr>
+              <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.range')}:</td><td align="right" style="padding:2px 0;">${(sat.range * (isMetric ? 1 : km_to_miles_factor)).toFixed(0)} ${distanceUnitsStr}</td></tr>
+              <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.rangeRate')}:</td><td align="right" style="padding:2px 0;">${(sat.rangeRate * (isMetric ? 1 : km_to_miles_factor)).toFixed(2)} ${rangeRateUnitsStr}</td></tr>
+              <tr><td style="color:#888; padding:2px 0;">${t('station.settings.satellites.dopplerFactor')}:</td><td align="right" style="padding:2px 0;">${sat.dopplerFactor.toFixed(7)}</td></tr>
             `
                 : ``
             }
