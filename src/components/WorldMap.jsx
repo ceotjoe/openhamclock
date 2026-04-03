@@ -1225,6 +1225,8 @@ export const WorldMap = ({
 
           // Render circleMarker on all 3 world copies
           replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
+            let glowCircle = null;
+
             const dxCircle = L.circleMarker([lat, lon], {
               radius: isHovered ? 12 : 6,
               fillColor: isHovered ? '#ffffff' : color,
@@ -1232,11 +1234,33 @@ export const WorldMap = ({
               weight: isHovered ? 3 : 1.5,
               opacity: 1,
               fillOpacity: isHovered ? 1 : 0.9,
-              interactive: !!onSpotClick,
+              interactive: true,
             })
               .bindPopup(
                 `<b data-qrz-call="${esc(dxCall)}" style="color: ${color}; cursor:pointer">${esc(dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`,
               )
+              .on('mouseover', function () {
+                this.openPopup();
+                glowCircle = L.circleMarker([lat, lon], {
+                  radius: 16,
+                  fillColor: color,
+                  color: color,
+                  weight: 12,
+                  opacity: 0.3,
+                  fillOpacity: 0.2,
+                  interactive: false,
+                }).addTo(map);
+                dxPathsMarkersRef.current.push(glowCircle);
+              })
+              .on('mouseout', function () {
+                this.closePopup();
+                if (glowCircle) {
+                  map.removeLayer(glowCircle);
+                  const idx = dxPathsMarkersRef.current.indexOf(glowCircle);
+                  if (idx !== -1) dxPathsMarkersRef.current.splice(idx, 1);
+                  glowCircle = null;
+                }
+              })
               .addTo(map);
 
             if (onSpotClick) {
@@ -1378,6 +1402,15 @@ export const WorldMap = ({
                   ${spot.name ? `<i>${esc(spot.name)}</i><br/>` : ''}${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>
                   ${spot.comments?.length > 0 ? `<br/><i>(${esc(spot.comments)})</i>` : ''}`,
               )
+              .on('mouseover', function () {
+                this.openPopup();
+                if (this._icon)
+                  this._icon.style.filter = `drop-shadow(0 0 4px ${mapDefaults.color}) drop-shadow(0 0 10px ${mapDefaults.color}) drop-shadow(0 0 20px ${mapDefaults.color})`;
+              })
+              .on('mouseout', function () {
+                this.closePopup();
+                if (this._icon) this._icon.style.filter = '';
+              })
               .addTo(map);
 
             if (onSpotClick) {
@@ -1593,6 +1626,8 @@ export const WorldMap = ({
             // Mutual reception spots get a gold border ring
             replicatePoint(spotLat, spotLon).forEach(([rLat, rLon]) => {
               let marker;
+              let glowCircle = null;
+
               if (isRx) {
                 // Diamond marker for RX
                 marker = L.marker([rLat, rLon], {
@@ -1629,6 +1664,35 @@ export const WorldMap = ({
                 ${spot.snr !== null ? `SNR: ${spot.snr > 0 ? '+' : ''}${spot.snr} dB` : ''}
               `,
                 )
+                .on('mouseover', function () {
+                  this.openPopup();
+                  if (this._path) {
+                    // circleMarker (TX) — use a Leaflet glow ring
+                    glowCircle = L.circleMarker([rLat, rLon], {
+                      radius: 14,
+                      fillColor: bandColor,
+                      color: bandColor,
+                      weight: 10,
+                      opacity: 0.3,
+                      fillOpacity: 0.2,
+                      interactive: false,
+                    }).addTo(map);
+                    pskMarkersRef.current.push(glowCircle);
+                  } else if (this._icon) {
+                    // divIcon (RX diamond) — CSS filter works fine
+                    this._icon.style.filter = `drop-shadow(0 0 4px ${bandColor}) drop-shadow(0 0 10px ${bandColor}) drop-shadow(0 0 20px ${bandColor})`;
+                  }
+                })
+                .on('mouseout', function () {
+                  this.closePopup();
+                  if (glowCircle) {
+                    map.removeLayer(glowCircle);
+                    const idx = pskMarkersRef.current.indexOf(glowCircle);
+                    if (idx !== -1) pskMarkersRef.current.splice(idx, 1);
+                    glowCircle = null;
+                  }
+                  if (this._icon) this._icon.style.filter = '';
+                })
                 .addTo(map);
 
               if (onSpotClick) {
@@ -1738,6 +1802,15 @@ export const WorldMap = ({
                 ${esc(spot.mode || '')} SNR: ${spot.snr != null ? (spot.snr >= 0 ? '+' : '') + spot.snr : '?'} dB
               `,
                 )
+                .on('mouseover', function () {
+                  this.openPopup();
+                  if (this._icon)
+                    this._icon.style.filter = `drop-shadow(0 0 4px ${bandColor}) drop-shadow(0 0 10px ${bandColor}) drop-shadow(0 0 20px ${bandColor})`;
+                })
+                .on('mouseout', function () {
+                  this.closePopup();
+                  if (this._icon) this._icon.style.filter = '';
+                })
                 .addTo(map);
 
               if (onSpotClick) {
