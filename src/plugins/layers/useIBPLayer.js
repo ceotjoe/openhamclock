@@ -21,6 +21,7 @@ import {
   SLOT_SECONDS,
   CYCLE_SECONDS,
 } from '../../utils/ibp.js';
+import { useRig } from '../../contexts/RigContext.jsx';
 import { makeDraggable } from './makeDraggable.js';
 import { addMinimizeToggle } from './addMinimizeToggle.js';
 
@@ -128,6 +129,10 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
   const [showInactive, setShowInactive] = useState(true);
   const [bandFilter, setBandFilter] = useState('all');
 
+  const { enabled: rigEnabled, tuneTo } = useRig();
+  const rigRef = useRef({ rigEnabled, tuneTo });
+  rigRef.current = { rigEnabled, tuneTo };
+
   const layersRef = useRef([]);
   const controlRef = useRef(null);
 
@@ -225,6 +230,9 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
             zIndexOffset: 500,
           });
           marker.bindPopup(popupHtml);
+          marker.on('click', () => {
+            if (rigRef.current.rigEnabled) rigRef.current.tuneTo(primaryBand.mhz);
+          });
           marker.addTo(map);
           layersRef.current.push(marker);
         });

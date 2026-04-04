@@ -118,6 +118,7 @@
   "ibp.cycleCountdown.tooltip": "{{secs}} seconds remaining in 3-minute cycle",
   "ibp.slotProgress.tooltip": "{{secs}} seconds remaining in this transmission slot",
   "ibp.footer": "NCDXF / IARU International Beacon Project",
+  "ibp.tune": "Tune to {{mhz}} MHz",
   "band.conditions": "⌇ BAND CONDITIONS",
   "band.conditions.fair": "FAIR",
   "band.conditions.good": "GOOD",

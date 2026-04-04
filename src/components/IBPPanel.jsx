@@ -7,6 +7,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import { useIBP } from '../hooks/useIBP';
+import { useRig } from '../contexts/RigContext';
 import { formatDistance } from '../utils/geo';
 import { DEFAULT_BAND_COLORS } from '../utils/bandColors';
 import { SLOT_SECONDS } from '../utils/ibp';
@@ -22,6 +23,7 @@ const formatBearing = (deg) => {
 export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
   const { t } = useTranslation();
   const { schedule, secondsLeft, cycleSecondsLeft, slotProgress } = useIBP(deLat, deLon);
+  const { enabled: rigEnabled, tuneTo } = useRig();
 
   const hasQTH = deLat != null && deLon != null;
 
@@ -75,6 +77,8 @@ export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
           return (
             <div
               key={band.mhz}
+              onClick={rigEnabled ? () => tuneTo(band.mhz) : undefined}
+              title={rigEnabled ? t('ibp.tune', { mhz: band.mhz.toFixed(3) }) : undefined}
               style={{
                 display: 'grid',
                 gridTemplateColumns: hasQTH ? '52px 1fr auto' : '52px 1fr',
@@ -84,6 +88,7 @@ export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
                 background: 'var(--bg-secondary)',
                 borderRadius: '4px',
                 borderLeft: `3px solid ${bandColor}`,
+                cursor: rigEnabled ? 'pointer' : 'default',
               }}
             >
               {/* Band label + frequency */}
