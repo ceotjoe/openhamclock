@@ -32,6 +32,7 @@ import {
   DXLocalTime,
   DigitalModesPanel,
   WinlinkPanel,
+  IBPPanel,
 } from './components';
 import MeshtasticPanel from './components/MeshtasticPanel.jsx';
 
@@ -101,6 +102,7 @@ export const DockableApp = ({
   pskReporter,
   wsjtx,
   aprsData,
+  ibp,
   filteredPskSpots,
   wsjtxMapSpots,
 
@@ -422,6 +424,7 @@ export const DockableApp = ({
       'propagation-bars': { name: 'VOACAP Bars', icon: '📊', group: 'Propagation' },
       'band-conditions': { name: 'Band Conditions', icon: '📶', group: 'Propagation' },
       'band-health': { name: 'Band Health', icon: '📶' },
+      ibp: { name: 'IBP Beacons', icon: '📡', group: 'Propagation' },
       'dx-cluster': { name: 'DX Cluster', icon: '📻' },
       'psk-reporter': { name: 'PSK Reporter', icon: '📡' },
       dxpeditions: { name: 'DXpeditions', icon: '🏝️' },
@@ -986,6 +989,16 @@ export const DockableApp = ({
 
         case 'winlink':
           content = <WinlinkPanel />;
+          break;
+
+        case 'ibp':
+          content = (
+            <IBPPanel
+              deLat={config.location?.lat ?? null}
+              deLon={config.location?.lon ?? null}
+              units={config.allUnits?.dist ?? 'metric'}
+            />
+          );
           break;
 
         default:
