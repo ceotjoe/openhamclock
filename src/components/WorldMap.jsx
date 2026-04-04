@@ -1315,12 +1315,40 @@ export const WorldMap = ({
             replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
               const label = L.marker([lat, lon], {
                 icon: labelIcon,
-                interactive: !!onSpotClick,
+                interactive: true,
                 zIndexOffset: isHovered ? 10000 : 0,
-              }).addTo(map);
+              })
+                .bindPopup(
+                  `<b data-qrz-call="${esc(dxCall)}" style="color: ${color}; cursor:pointer">${esc(dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`,
+                )
+                .on('mouseover', function () {
+                  if (pinnedPopupRef.current.marker !== this) this.openPopup();
+                  if (this._icon)
+                    this._icon.style.filter = `drop-shadow(0 0 4px ${color}) drop-shadow(0 0 10px ${color}) drop-shadow(0 0 20px ${color})`;
+                })
+                .on('mouseout', function () {
+                  if (pinnedPopupRef.current.marker !== this) this.closePopup();
+                  if (this._icon) this._icon.style.filter = '';
+                })
+                .addTo(map);
 
               if (onSpotClick) {
-                label.on('click', () => onSpotClick(path));
+                label.on('click', (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  const pinned = pinnedPopupRef.current;
+                  if (pinned.marker) {
+                    pinned.marker.closePopup();
+                    clearTimeout(pinned.timer);
+                  }
+                  pinned.marker = label;
+                  label.openPopup();
+                  pinned.timer = setTimeout(() => {
+                    label.closePopup();
+                    pinned.marker = null;
+                    pinned.timer = null;
+                  }, 20000);
+                  onSpotClick(path);
+                });
               }
 
               dxPathsMarkersRef.current.push(label);
@@ -1476,10 +1504,51 @@ export const WorldMap = ({
               iconAnchor: [0, -2],
             });
             replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
+              const grid = spot.grid6 ? spot.grid6 : spot.grid ? spot.grid : null;
+
               const label = L.marker([lat, lon], {
                 icon: labelIcon,
-                interactive: false,
-              }).addTo(map);
+                interactive: true,
+              })
+                .bindPopup(
+                  `<span style="color:${mapDefaults.color};background:#000">
+                      ${mapDefaults.shape} ${mapDefaults.name} - </span>
+                    <b data-qrz-call="${esc(spot.call)}" style="color:${mapDefaults.color}; cursor:pointer">${esc(spot.call)}</b><br/>
+                    ${grid ? `${esc(grid)}<br/>` : ''}
+                    <span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br/>
+                    ${spot.name ? `<i>${esc(spot.name)}</i><br/>` : ''}${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>
+                    ${spot.comments?.length > 0 ? `<br/><i>(${esc(spot.comments)})</i>` : ''}`,
+                )
+                .on('mouseover', function () {
+                  if (pinnedPopupRef.current.marker !== this) this.openPopup();
+                  if (this._icon)
+                    this._icon.style.filter = `drop-shadow(0 0 4px ${mapDefaults.color}) drop-shadow(0 0 10px ${mapDefaults.color}) drop-shadow(0 0 20px ${mapDefaults.color})`;
+                })
+                .on('mouseout', function () {
+                  if (pinnedPopupRef.current.marker !== this) this.closePopup();
+                  if (this._icon) this._icon.style.filter = '';
+                })
+                .addTo(map);
+
+              if (onSpotClick) {
+                label.on('click', (e) => {
+                  L.DomEvent.stopPropagation(e);
+                  const pinned = pinnedPopupRef.current;
+                  if (pinned.marker) {
+                    pinned.marker.closePopup();
+                    clearTimeout(pinned.timer);
+                  }
+                  pinned.marker = label;
+                  label.openPopup();
+                  pinned.timer = setTimeout(() => {
+                    label.closePopup();
+                    pinned.marker = null;
+                    pinned.timer = null;
+                  }, 20000);
+                  onSpotClick(spot);
+                });
+              }
+
               markersRef.current.push(label);
             });
           }
