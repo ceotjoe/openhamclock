@@ -89,6 +89,8 @@ import { mapDefs as SOTADefs } from './SOTAPanel.jsx';
 import { mapDefs as WWBOTADefs } from './WWBOTAPanel.jsx';
 import { mapDefs as WWFFDefs } from './WWFFPanel.jsx';
 
+const POPUP_AUTO_CLOSE_MS = 20_000;
+
 export const WorldMap = ({
   deLocation,
   dxLocation,
@@ -209,7 +211,7 @@ export const WorldMap = ({
             pinned.marker = null;
             pinned.timer = null;
             if (touchPendingRef.current === marker) touchPendingRef.current = null;
-          }, 20000);
+          }, POPUP_AUTO_CLOSE_MS);
         }
       } else {
         // Pointer device — pin popup and tune immediately
@@ -223,7 +225,7 @@ export const WorldMap = ({
           marker.closePopup();
           pinned.marker = null;
           pinned.timer = null;
-        }, 20000);
+        }, POPUP_AUTO_CLOSE_MS);
         onTune();
       }
     });
@@ -300,6 +302,43 @@ export const WorldMap = ({
     },
     [bindSpotClick],
   );
+
+  // Attaches mouseover/mouseout popup + glow behaviour to any spot marker.
+  // For SVG circleMarkers (this._path) a Leaflet glow ring is used; for divIcon
+  // markers (this._icon) a CSS drop-shadow filter is applied instead.
+  const bindHoverGlow = useCallback((marker, latlng, color, markersRef) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    let glowRing = null;
+    marker
+      .on('mouseover', function () {
+        if (pinnedPopupRef.current.marker !== this) this.openPopup();
+        if (this._path) {
+          glowRing = L.circleMarker(latlng, {
+            radius: 16,
+            fillColor: color,
+            color,
+            weight: 12,
+            opacity: 0.3,
+            fillOpacity: 0.2,
+            interactive: false,
+          }).addTo(map);
+          markersRef.current.push(glowRing);
+        } else if (this._icon) {
+          this._icon.style.filter = `drop-shadow(0 0 4px ${color}) drop-shadow(0 0 10px ${color}) drop-shadow(0 0 20px ${color})`;
+        }
+      })
+      .on('mouseout', function () {
+        if (pinnedPopupRef.current.marker !== this) this.closePopup();
+        if (glowRing) {
+          map.removeLayer(glowRing);
+          const idx = markersRef.current.indexOf(glowRing);
+          if (idx !== -1) markersRef.current.splice(idx, 1);
+          glowRing = null;
+        }
+        if (this._icon) this._icon.style.filter = '';
+      });
+  }, []);
 
   const handleAzimuthalMapReady = useCallback((map) => {
     azimuthalMapRef.current = map;
@@ -1374,8 +1413,6 @@ export const WorldMap = ({
           // Render circleMarker on all 3 world copies
           const dxPopupHtml = `<b data-qrz-call="${esc(dxCall)}" style="color: ${color}; cursor:pointer">${esc(dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`;
           replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
-            let glowCircle = null;
-
             const dxCircle = L.circleMarker([lat, lon], {
               radius: isHovered ? 12 : 6,
               fillColor: isHovered ? '#ffffff' : color,
@@ -1386,29 +1423,9 @@ export const WorldMap = ({
               interactive: !isTouchDeviceRef.current,
             })
               .bindPopup(dxPopupHtml)
-              .on('mouseover', function () {
-                if (pinnedPopupRef.current.marker !== this) this.openPopup();
-                glowCircle = L.circleMarker([lat, lon], {
-                  radius: 16,
-                  fillColor: color,
-                  color: color,
-                  weight: 12,
-                  opacity: 0.3,
-                  fillOpacity: 0.2,
-                  interactive: false,
-                }).addTo(map);
-                dxPathsMarkersRef.current.push(glowCircle);
-              })
-              .on('mouseout', function () {
-                if (pinnedPopupRef.current.marker !== this) this.closePopup();
-                if (glowCircle) {
-                  map.removeLayer(glowCircle);
-                  const idx = dxPathsMarkersRef.current.indexOf(glowCircle);
-                  if (idx !== -1) dxPathsMarkersRef.current.splice(idx, 1);
-                  glowCircle = null;
-                }
-              })
               .addTo(map);
+
+            bindHoverGlow(dxCircle, [lat, lon], color, dxPathsMarkersRef);
 
             if (onSpotClick) {
               if (!isTouchDeviceRef.current) {
@@ -1445,16 +1462,9 @@ export const WorldMap = ({
                 zIndexOffset: isHovered ? 10000 : 0,
               })
                 .bindPopup(dxPopupHtml)
-                .on('mouseover', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.openPopup();
-                  if (this._icon)
-                    this._icon.style.filter = `drop-shadow(0 0 4px ${color}) drop-shadow(0 0 10px ${color}) drop-shadow(0 0 20px ${color})`;
-                })
-                .on('mouseout', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.closePopup();
-                  if (this._icon) this._icon.style.filter = '';
-                })
                 .addTo(map);
+
+              bindHoverGlow(label, [lat, lon], color, dxPathsMarkersRef);
 
               if (onSpotClick) {
                 if (!isTouchDeviceRef.current) {
@@ -1584,16 +1594,9 @@ export const WorldMap = ({
           replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
             const marker = L.marker([lat, lon], { icon: mapDefaults.icon, interactive: !isTouchDeviceRef.current })
               .bindPopup(spotPopupHtml)
-              .on('mouseover', function () {
-                if (pinnedPopupRef.current.marker !== this) this.openPopup();
-                if (this._icon)
-                  this._icon.style.filter = `drop-shadow(0 0 4px ${mapDefaults.color}) drop-shadow(0 0 10px ${mapDefaults.color}) drop-shadow(0 0 20px ${mapDefaults.color})`;
-              })
-              .on('mouseout', function () {
-                if (pinnedPopupRef.current.marker !== this) this.closePopup();
-                if (this._icon) this._icon.style.filter = '';
-              })
               .addTo(map);
+
+            bindHoverGlow(marker, [lat, lon], mapDefaults.color, markersRef);
 
             if (onSpotClick) {
               if (!isTouchDeviceRef.current) {
@@ -1627,16 +1630,9 @@ export const WorldMap = ({
                 interactive: !isTouchDeviceRef.current,
               })
                 .bindPopup(spotPopupHtml)
-                .on('mouseover', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.openPopup();
-                  if (this._icon)
-                    this._icon.style.filter = `drop-shadow(0 0 4px ${mapDefaults.color}) drop-shadow(0 0 10px ${mapDefaults.color}) drop-shadow(0 0 20px ${mapDefaults.color})`;
-                })
-                .on('mouseout', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.closePopup();
-                  if (this._icon) this._icon.style.filter = '';
-                })
                 .addTo(map);
+
+              bindHoverGlow(label, [lat, lon], mapDefaults.color, markersRef);
 
               if (onSpotClick) {
                 if (!isTouchDeviceRef.current) {
@@ -1853,7 +1849,6 @@ export const WorldMap = ({
               `;
             replicatePoint(spotLat, spotLon).forEach(([rLat, rLon]) => {
               let marker;
-              let glowCircle = null;
 
               if (isRx) {
                 // Diamond marker for RX
@@ -1885,38 +1880,9 @@ export const WorldMap = ({
                 });
               }
 
-              marker
-                .bindPopup(pskPopupHtml)
-                .on('mouseover', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.openPopup();
-                  if (this._path) {
-                    // circleMarker (TX) — use a Leaflet glow ring
-                    glowCircle = L.circleMarker([rLat, rLon], {
-                      radius: 14,
-                      fillColor: bandColor,
-                      color: bandColor,
-                      weight: 10,
-                      opacity: 0.3,
-                      fillOpacity: 0.2,
-                      interactive: false,
-                    }).addTo(map);
-                    pskMarkersRef.current.push(glowCircle);
-                  } else if (this._icon) {
-                    // divIcon (RX diamond) — CSS filter works fine
-                    this._icon.style.filter = `drop-shadow(0 0 4px ${bandColor}) drop-shadow(0 0 10px ${bandColor}) drop-shadow(0 0 20px ${bandColor})`;
-                  }
-                })
-                .on('mouseout', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.closePopup();
-                  if (glowCircle) {
-                    map.removeLayer(glowCircle);
-                    const idx = pskMarkersRef.current.indexOf(glowCircle);
-                    if (idx !== -1) pskMarkersRef.current.splice(idx, 1);
-                    glowCircle = null;
-                  }
-                  if (this._icon) this._icon.style.filter = '';
-                })
-                .addTo(map);
+              marker.bindPopup(pskPopupHtml).addTo(map);
+
+              bindHoverGlow(marker, [rLat, rLon], bandColor, pskMarkersRef);
 
               if (onSpotClick) {
                 if (!isTouchDeviceRef.current) {
@@ -2038,16 +2004,9 @@ export const WorldMap = ({
                 interactive: !isTouchDeviceRef.current,
               })
                 .bindPopup(wsjtxPopupHtml)
-                .on('mouseover', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.openPopup();
-                  if (this._icon)
-                    this._icon.style.filter = `drop-shadow(0 0 4px ${bandColor}) drop-shadow(0 0 10px ${bandColor}) drop-shadow(0 0 20px ${bandColor})`;
-                })
-                .on('mouseout', function () {
-                  if (pinnedPopupRef.current.marker !== this) this.closePopup();
-                  if (this._icon) this._icon.style.filter = '';
-                })
                 .addTo(map);
+
+              bindHoverGlow(diamond, [rLat, rLon], bandColor, wsjtxMarkersRef);
 
               if (onSpotClick) {
                 if (!isTouchDeviceRef.current) {
