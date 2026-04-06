@@ -742,11 +742,8 @@ function buildSetupHtml(version, firstRunToken = null) {
 
       <!-- Instructions -->
       <div class="ohc-instructions">
-        <strong>Setup in OpenHamClock:</strong><br>
-        1. Open <strong>Settings</strong> → <strong>Station Settings</strong> → <strong>Rig Control</strong><br>
-        2. Check <strong>Enable Rig Control</strong><br>
-        3. Set Host URL to: <code>http://localhost:5555</code><br>
-        4. Click any DX spot, POTA, or SOTA to tune your radio! 🎉
+        <strong>New to Rig Bridge?</strong><br>
+        Follow <a href="https://github.com/accius/openhamclock/blob/main/rig-bridge/README.md#option-a----installer-from-the-openhamclock-settings-tab-recommended" target="_blank" rel="noopener noreferrer" style="color:#00ffcc;">Option A in the Rig Bridge README</a> for step-by-step setup instructions.
       </div>
     </div>
 
