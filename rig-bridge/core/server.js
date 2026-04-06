@@ -501,6 +501,12 @@ function buildSetupHtml(version, firstRunToken = null) {
       <h1>📻 OpenHamClock Rig Bridge</h1>
       <div class="subtitle">Direct USB connection to your radio — no flrig or rigctld needed</div>
       <div id="logoutArea" style="display:none;margin-top:8px;">
+        <div id="headerTokenArea" style="display:none;align-items:center;gap:6px;justify-content:center;margin-bottom:6px;">
+          <span style="font-size:11px;color:#4b5563;">API Token:</span>
+          <input type="password" id="headerToken" readonly style="background:none;border:none;color:#00ffcc;font-family:monospace;font-size:11px;outline:none;width:160px;">
+          <button class="copy-btn" onclick="copyHeaderToken()" style="font-size:10px;padding:2px 7px;">Copy</button>
+          <button class="copy-btn" id="headerTokenToggle" onclick="toggleHeaderToken()" style="font-size:10px;padding:2px 7px;">Show</button>
+        </div>
         <span class="logout-link" onclick="doLogout()">🔓 Lock setup</span>
       </div>
     </div>
@@ -1258,8 +1264,17 @@ function buildSetupHtml(version, firstRunToken = null) {
       }
       const overlay = document.getElementById('loginOverlay');
       const logoutArea = document.getElementById('logoutArea');
+      const headerTokenArea = document.getElementById('headerTokenArea');
+      const headerToken = document.getElementById('headerToken');
       if (overlay) overlay.style.display = 'none';
       if (logoutArea) logoutArea.style.display = 'block';
+      if (token && headerToken) {
+        headerToken.value = token;
+        headerToken.type = 'password';
+        const toggle = document.getElementById('headerTokenToggle');
+        if (toggle) toggle.textContent = 'Show';
+      }
+      if (headerTokenArea) headerTokenArea.style.display = token ? 'flex' : 'none';
       loadApp();
     }
 
@@ -1344,6 +1359,26 @@ function buildSetupHtml(version, firstRunToken = null) {
       inp.select();
       try { document.execCommand('copy'); } catch (e) {}
       showToast('✅ Token copied!', 'success');
+    }
+
+    function copyHeaderToken() {
+      const inp = document.getElementById('headerToken');
+      if (!inp) return;
+      const prev = inp.type;
+      inp.type = 'text';
+      inp.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      inp.type = prev;
+      showToast('✅ Token copied!', 'success');
+    }
+
+    function toggleHeaderToken() {
+      const inp = document.getElementById('headerToken');
+      const btn = document.getElementById('headerTokenToggle');
+      if (!inp) return;
+      const showing = inp.type === 'text';
+      inp.type = showing ? 'password' : 'text';
+      if (btn) btn.textContent = showing ? 'Show' : 'Hide';
     }
 
     async function dismissBanner() {
