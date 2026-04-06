@@ -20,7 +20,8 @@ It also connects FT8/FT4 decoding software (WSJT-X, JTDX, MSHV, JS8Call) to Open
 8. [Antenna Rotator](#antenna-rotator)
 9. [HTTPS Setup (needed for openhamclock.com)](#https-setup)
 10. [Troubleshooting](#troubleshooting)
-11. [Advanced Topics](#advanced-topics)
+11. [Glossary](#glossary)
+12. [Advanced Topics](#advanced-topics)
 
 ---
 
@@ -357,7 +358,7 @@ For example: Rig Bridge runs on a Raspberry Pi or shack PC connected to the radi
 
 ---
 
-### Scenario C — Using the cloud version at openhamclock.com
+### Scenario C — Using the cloud version at openhamclock.com _(Cloud Relay: Alpha)_
 
 This lets you control your radio at home from anywhere in the world through the openhamclock.com website.
 
@@ -399,12 +400,12 @@ Rig Bridge can receive decoded FT8, FT4, JT65, and other digital mode signals fr
 
 ### Supported software
 
-| Software    | Mode                          | Default Port |
-| ----------- | ----------------------------- | ------------ |
-| **WSJT-X**  | FT8, FT4, JT65, JT9, and more | 2237         |
-| **JTDX**    | FT8, JT65 (enhanced decoding) | 2238         |
-| **MSHV**    | MSK144, Q65, and others       | 2239         |
-| **JS8Call** | JS8 keyboard messaging        | 2242         |
+| Software    | Mode                          | Default Port | Maturity |
+| ----------- | ----------------------------- | ------------ | -------- |
+| **WSJT-X**  | FT8, FT4, JT65, JT9, and more | 2237         | Beta     |
+| **JTDX**    | FT8, JT65 (enhanced decoding) | 2238         | Alpha    |
+| **MSHV**    | MSK144, Q65, and others       | 2239         | Alpha    |
+| **JS8Call** | JS8 keyboard messaging        | 2242         | Alpha    |
 
 All of these are **bidirectional** — OpenHamClock can also send replies, stop transmit, set free text, and highlight callsigns in the decode window.
 
@@ -439,7 +440,7 @@ By default, WSJT-X sends its decoded packets only to one listener. If you want b
 
 ---
 
-## APRS via Local TNC
+## APRS via Local TNC _(Beta)_
 
 If you run a local APRS TNC (for example, [Direwolf](https://github.com/wb2osz/direwolf) connected to a VHF radio), Rig Bridge can receive APRS packets from it and show nearby stations on the OpenHamClock map — without needing an internet connection.
 
@@ -466,7 +467,7 @@ If you have a traditional hardware TNC connected via serial port:
 
 ---
 
-## Antenna Rotator
+## Antenna Rotator _(Alpha)_
 
 Rig Bridge can control antenna rotators via [Hamlib's](https://hamlib.github.io/) `rotctld` daemon.
 
@@ -652,6 +653,23 @@ The certificate is valid for 10 years and is regenerated only if you click **Reg
 | **HTTPS: browser still shows warning after installing cert** | Restart your browser completely (close all windows, not just the tab).                                                            |
 | **Cloud Relay: 401 / 403 error**                             | The API Token in Rig Bridge does not match what OpenHamClock has. Copy the token again from the Rig Bridge setup page.            |
 | **Cloud Relay: PTT / tune feels slow**                       | Make sure Rig Bridge version is 2.0 or newer. Older versions used a slower polling method.                                        |
+
+---
+
+## Glossary
+
+### Maturity levels
+
+Components and plugins in Rig Bridge are labelled with a maturity level to help you set
+expectations before enabling them.
+
+| Level     | Meaning                                                                                                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Alpha** | Test implementation with no rigid testing yet. Use with caution — behaviour may change and bugs are expected. Feedback and bug reports are especially welcome. |
+| **Beta**  | Already tested more intensively, but still experimental status. More stable than Alpha, but not yet considered production-ready.                               |
+
+Unlabelled components (USB radio control, flrig, rigctld, TCI, SmartSDR) are considered
+stable and have been tested across multiple hardware setups.
 
 ---
 
