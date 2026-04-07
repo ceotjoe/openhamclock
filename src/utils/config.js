@@ -24,6 +24,7 @@ export const DEFAULT_CONFIG = {
   defaultDX: { lat: 35.6762, lon: 139.6503 }, // Tokyo
   units: 'imperial', // 'imperial' or 'metric'
   allUnits: { dist: 'imperial', temp: 'imperial', press: 'imperial' },
+  showWhatsNew: true,
   propagation: {
     mode: 'SSB', // SSB, CW, FT8, FT4, WSPR, JS8, RTTY, PSK31
     power: 100, // TX power in watts
@@ -37,6 +38,7 @@ export const DEFAULT_CONFIG = {
   swapHeaderClocks: false, // false = UTC first, true = Local first
   showMutualReception: true, // Show gold star on PSK spots with mutual reception
   preventSleep: false, // Keep screen awake while app is open (tablet/kiosk mode)
+  sharePresence: true, // Share callsign on the Active Users map layer
   displaySchedule: { enabled: false, sleepTime: '23:00', wakeTime: '07:00' }, // Scheduled display on/off
   showSatellites: true,
   showPota: true,
@@ -107,12 +109,12 @@ export const loadConfig = () => {
       callsign: serverConfig.callsign && serverConfig.callsign !== 'N0CALL' ? serverConfig.callsign : config.callsign,
       locator: serverConfig.locator || config.locator,
       location: {
-        lat: serverConfig.latitude || config.location.lat,
-        lon: serverConfig.longitude || config.location.lon,
+        lat: serverConfig.latitude ?? config.location.lat,
+        lon: serverConfig.longitude ?? config.location.lon,
       },
       defaultDX: {
-        lat: serverConfig.dxLatitude || config.defaultDX.lat,
-        lon: serverConfig.dxLongitude || config.defaultDX.lon,
+        lat: serverConfig.dxLatitude ?? config.defaultDX.lat,
+        lon: serverConfig.dxLongitude ?? config.defaultDX.lon,
       },
       units: serverConfig.units || config.units,
       allUnits: serverConfig.allUnits || config.allUnits,
@@ -339,7 +341,7 @@ export const applyTheme = (theme) => {
 export const MAP_STYLES = {
   dark: {
     name: 'Dark',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?language={lang}',
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
   },
@@ -365,7 +367,7 @@ export const MAP_STYLES = {
   },
   streets: {
     name: 'Streets',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?language={lang}',
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
   },
@@ -381,7 +383,7 @@ export const MAP_STYLES = {
   },
   hybrid: {
     name: 'Hybrid',
-    url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl={lang}',
     attribution: '&copy; Google',
   },
   gray: {

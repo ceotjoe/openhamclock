@@ -56,11 +56,28 @@ module.exports = function (app, ctx) {
     }
   }
 
-  // Negative cache: only back off after repeated failures
+  // Negative cache: exponential backoff after repeated failures
   let iturhfpropDown = 0;
   let iturhfpropFailCount = 0;
-  const ITURHFPROP_BACKOFF = 30 * 1000; // 30 seconds
-  const ITURHFPROP_FAIL_THRESHOLD = 3; // 3 consecutive failures before backing off
+  const ITURHFPROP_FAIL_THRESHOLD = 3; // consecutive failures before backing off
+  const ITURHFPROP_BACKOFF_BASE = 30 * 1000; // 30s initial backoff
+  const ITURHFPROP_BACKOFF_MAX = 10 * 60 * 1000; // 10 min max backoff
+  let iturhfpropInFlight = 0; // track concurrent requests
+  const ITURHFPROP_MAX_INFLIGHT = 3; // cap concurrent outbound fetches
+
+  function iturhfpropBackoff() {
+    if (iturhfpropFailCount < ITURHFPROP_FAIL_THRESHOLD) return 0;
+    // Exponential: 30s, 60s, 120s, 240s, ... capped at 10min
+    const exp = Math.min(
+      ITURHFPROP_BACKOFF_BASE * Math.pow(2, iturhfpropFailCount - ITURHFPROP_FAIL_THRESHOLD),
+      ITURHFPROP_BACKOFF_MAX,
+    );
+    return exp;
+  }
+
+  function iturhfpropIsDown() {
+    return iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < iturhfpropBackoff();
+  }
 
   // Background fetch queue — runs ITURHFProp requests without blocking the response
   const bgQueue = new Set(); // active queue keys (prevents duplicate requests)
@@ -81,17 +98,17 @@ module.exports = function (app, ctx) {
    */
   async function fetchITURHFPropPrediction(txLat, txLon, rxLat, rxLon, ssn, month, hour, txPower, txGain) {
     if (!ITURHFPROP_URL) return null;
-    if (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
-      return null;
+    if (iturhfpropIsDown()) return null;
+    if (iturhfpropInFlight >= ITURHFPROP_MAX_INFLIGHT) return null;
 
     const pw = Math.round(txPower || 100);
     const gn = Math.round((txGain || 0) * 10) / 10;
     const cacheKey = `${txLat.toFixed(1)},${txLon.toFixed(1)}-${rxLat.toFixed(1)},${rxLon.toFixed(1)}-${ssn}-${month}-${hour}-${pw}-${gn}`;
-    const now = Date.now();
 
     const cached = ituCacheGet(iturhfpropSingleCache, cacheKey);
     if (cached) return cached;
 
+    iturhfpropInFlight++;
     try {
       const url = `${ITURHFPROP_URL}/api/bands?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&hour=${hour}&txPower=${pw}&txGain=${gn}`;
 
@@ -117,6 +134,8 @@ module.exports = function (app, ctx) {
         logErrorOnce('Hybrid', `ITURHFProp: ${err.message}`);
       }
       return null;
+    } finally {
+      iturhfpropInFlight--;
     }
   }
 
@@ -132,8 +151,8 @@ module.exports = function (app, ctx) {
 
   async function fetchITURHFPropHourly(txLat, txLon, rxLat, rxLon, ssn, month, txPower, txGain) {
     if (!ITURHFPROP_URL) return null;
-    if (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
-      return null;
+    if (iturhfpropIsDown()) return null;
+    if (iturhfpropInFlight >= ITURHFPROP_MAX_INFLIGHT) return null;
 
     const pw = Math.round(txPower || 100);
     const gn = Math.round((txGain || 0) * 10) / 10;
@@ -142,6 +161,7 @@ module.exports = function (app, ctx) {
     const cached = ituCacheGet(iturhfpropHourlyMap, cacheKey);
     if (cached) return cached;
 
+    iturhfpropInFlight++;
     try {
       const url = `${ITURHFPROP_URL}/api/predict/hourly?txLat=${txLat}&txLon=${txLon}&rxLat=${rxLat}&rxLon=${rxLon}&ssn=${ssn}&month=${month}&txPower=${pw}&txGain=${gn}`;
 
@@ -166,11 +186,16 @@ module.exports = function (app, ctx) {
       iturhfpropFailCount++;
       iturhfpropDown = Date.now();
       if (err.name === 'AbortError') {
-        logErrorOnce('ITURHFProp', `Hourly fetch timed out (attempt ${iturhfpropFailCount})`);
+        logErrorOnce(
+          'ITURHFProp',
+          `Hourly fetch timed out (attempt ${iturhfpropFailCount}), backing off ${Math.round(iturhfpropBackoff() / 1000)}s`,
+        );
       } else {
         logErrorOnce('ITURHFProp', `Hourly fetch: ${err.message} (attempt ${iturhfpropFailCount})`);
       }
       return null;
+    } finally {
+      iturhfpropInFlight--;
     }
   }
 
@@ -294,13 +319,20 @@ module.exports = function (app, ctx) {
 
         // If still no data and service isn't down, queue background fetch
         // so the next poll (10 min) gets precise results
-        if (!hourlyData && Date.now() - iturhfpropDown >= ITURHFPROP_BACKOFF) {
+        if (!hourlyData && !iturhfpropIsDown()) {
           queueBackgroundFetch(hourlyKey, () =>
             fetchITURHFPropHourly(de.lat, de.lon, dx.lat, dx.lon, effectiveSSN, currentMonth, txPower, txGain),
           );
         }
 
-        if (hourlyData?.hourly?.length === 24) {
+        // Validate that hourly data actually has frequency results — the proppy
+        // service returns 24 entries even when circuit breaker is open, but with
+        // empty frequencies arrays. Without this check we'd show 0% for all bands
+        // instead of falling through to the built-in model.
+        const hasFreqData =
+          hourlyData?.hourly?.length === 24 && hourlyData.hourly.some((h) => h.frequencies?.length > 0);
+
+        if (hasFreqData) {
           logDebug('[Propagation] Using ITURHFProp P.533-14 for all 24 hours');
           usedITURHFProp = true;
 
@@ -354,7 +386,8 @@ module.exports = function (app, ctx) {
       }
 
       // If ITURHFProp hourly failed, try single-hour for current state
-      if (!usedITURHFProp && useITURHFProp) {
+      // Skip if service is known down — fall straight through to built-in model
+      if (!usedITURHFProp && useITURHFProp && !iturhfpropIsDown()) {
         const singleHour = await fetchITURHFPropPrediction(
           de.lat,
           de.lon,
@@ -370,11 +403,15 @@ module.exports = function (app, ctx) {
           logDebug('[Propagation] ITURHFProp hourly unavailable, using single-hour + built-in for 24h chart');
           iturhfpropMuf = singleHour.muf;
 
-          // Use single-hour data for current bands
+          // Use single-hour data for current bands AND inject into predictions
+          // so the chart's current-hour cell matches the bars
           currentBands = bands
             .map((band, idx) => {
               const ituBand = singleHour.bands?.[band];
               const rel = ituBand ? adjustReliability(Math.round(ituBand.reliability), signalMarginDb) : 0;
+              // Pre-seed the predictions array with the ITURHFProp value for current hour
+              if (!predictions[band]) predictions[band] = [];
+              predictions[band][currentHour] = { hour: currentHour, reliability: rel, snr: calculateSNR(rel) };
               return {
                 band,
                 freq: bandFreqs[idx],
@@ -396,8 +433,14 @@ module.exports = function (app, ctx) {
 
         bands.forEach((band, idx) => {
           const freq = bandFreqs[idx];
+          const existing = predictions[band] || [];
           predictions[band] = [];
           for (let hour = 0; hour < 24; hour++) {
+            // Preserve ITURHFProp single-hour value if pre-seeded (keeps bars/chart in sync)
+            if (existing[hour]) {
+              predictions[band].push(existing[hour]);
+              continue;
+            }
             const reliability = calculateEnhancedReliability(
               freq,
               distance,
@@ -490,11 +533,22 @@ module.exports = function (app, ctx) {
       ]);
       if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
         const data = await fluxRes.value.json();
-        if (data?.length) sfi = Math.round(data[data.length - 1].flux || 150);
+        // f107_cm_flux.json is not sorted chronologically — find the entry with
+        // the latest time_tag rather than assuming the last element is current.
+        if (data?.length) {
+          const latest = data.reduce((best, d) => (d.time_tag > (best?.time_tag ?? '') ? d : best), null);
+          if (latest?.flux != null) sfi = Math.round(latest.flux ?? 150);
+        }
       }
       if (kRes.status === 'fulfilled' && kRes.value.ok) {
         const data = await kRes.value.json();
-        if (data?.length > 1) kIndex = parseInt(data[data.length - 1][1]) || 2;
+        // NOAA changed from array-of-arrays to array-of-objects — support both.
+        if (data?.length) {
+          const last = data[data.length - 1];
+          const raw = Array.isArray(last) ? last[1] : last?.Kp;
+          const parsed = parseFloat(raw);
+          if (Number.isFinite(parsed)) kIndex = parsed;
+        }
       }
       ssn = Math.max(0, Math.round((sfi - 67) / 0.97));
     } catch (e) {
@@ -1005,11 +1059,7 @@ module.exports = function (app, ctx) {
   // Fires background ITURHFProp requests so that by the time a user
   // clicks the spot, the precise P.533-14 prediction is already cached.
   function prewarmPropagation(deLat, deLon, dxLat, dxLon) {
-    if (
-      !ITURHFPROP_URL ||
-      (iturhfpropFailCount >= ITURHFPROP_FAIL_THRESHOLD && Date.now() - iturhfpropDown < ITURHFPROP_BACKOFF)
-    )
-      return;
+    if (!ITURHFPROP_URL || iturhfpropIsDown()) return;
 
     const currentMonth = new Date().getMonth() + 1;
     // Use defaults for mode/power — most users are SSB/100W

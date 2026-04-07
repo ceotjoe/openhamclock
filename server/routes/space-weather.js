@@ -20,6 +20,10 @@ module.exports = function (app, ctx) {
   // N0NBH / HamQSL cache
   let n0nbhCache = { data: null, timestamp: 0 };
   const N0NBH_CACHE_TTL = 60 * 60 * 1000;
+  // Maximum age of stale error-fallback data.  N0NBH updates every ~3 hours;
+  // beyond 4 hours the data is definitively out of date and we should stop
+  // serving it rather than silently mislead clients.
+  const N0NBH_MAX_STALE_TTL = 4 * 60 * 60 * 1000;
 
   // Parse N0NBH solarxml.php XML into clean JSON
   function parseN0NBHxml(xml) {
@@ -165,7 +169,7 @@ module.exports = function (app, ctx) {
       }
 
       // SFI current fallback: N0NBH
-      if (!result.sfi.current && n0nbhCache.data?.solarData?.solarFlux) {
+      if (result.sfi.current == null && n0nbhCache.data?.solarData?.solarFlux) {
         const flux = parseInt(n0nbhCache.data.solarData.solarFlux);
         if (flux > 0) result.sfi.current = flux;
       }
@@ -174,38 +178,52 @@ module.exports = function (app, ctx) {
       if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
         const data = await fluxRes.value.json();
         if (data?.length) {
-          const recent = data.slice(-30);
+          // f107_cm_flux.json is not chronologically sorted — sort before slicing
+          // so history shows the correct 30 most-recent readings in order.
+          const sorted = [...data].sort((a, b) => (a.time_tag > b.time_tag ? 1 : -1));
+          const recent = sorted.slice(-30);
           result.sfi.history = recent.map((d) => ({
             date: d.time_tag || d.date,
             value: Math.round(d.flux || d.value || 0),
           }));
-          if (!result.sfi.current) {
-            result.sfi.current = result.sfi.history[result.sfi.history.length - 1]?.value || null;
+          if (result.sfi.current == null) {
+            result.sfi.current = result.sfi.history[result.sfi.history.length - 1]?.value ?? null;
           }
         }
       }
 
       // Kp history
+      // NOAA changed from array-of-arrays [[header],[time,Kp,...],...] to
+      // array-of-objects [{time_tag,Kp,...},...] — support both formats.
       if (kIndexRes.status === 'fulfilled' && kIndexRes.value.ok) {
         const data = await kIndexRes.value.json();
-        if (data?.length > 1) {
-          const recent = data.slice(1).slice(-24);
+        if (data?.length) {
+          const isObj = !Array.isArray(data[0]);
+          const rows = isObj ? data : data.slice(1); // old format has a header row
+          const recent = rows.slice(-24);
           result.kp.history = recent.map((d) => ({
-            time: d[0],
-            value: parseFloat(d[1]) || 0,
+            time: isObj ? d.time_tag : d[0],
+            value: Number.isFinite(isObj ? d.Kp : parseFloat(d[1])) ? (isObj ? d.Kp : parseFloat(d[1])) : 0,
           }));
-          result.kp.current = result.kp.history[result.kp.history.length - 1]?.value || null;
+          result.kp.current = result.kp.history[result.kp.history.length - 1]?.value ?? null;
         }
       }
 
-      // Kp forecast
+      // Kp forecast — same format change; forecast uses lowercase 'kp' field.
+      // The endpoint mixes past observations with future predictions; keep only
+      // entries whose time_tag is in the future so the chart shows predictions.
       if (kForecastRes.status === 'fulfilled' && kForecastRes.value.ok) {
         const data = await kForecastRes.value.json();
-        if (data?.length > 1) {
-          result.kp.forecast = data.slice(1).map((d) => ({
-            time: d[0],
-            value: parseFloat(d[1]) || 0,
-          }));
+        if (data?.length) {
+          const isObj = !Array.isArray(data[0]);
+          const rows = isObj ? data : data.slice(1);
+          const nowIso = new Date().toISOString();
+          result.kp.forecast = rows
+            .filter((d) => (isObj ? d.time_tag : d[0]) > nowIso)
+            .map((d) => ({
+              time: isObj ? d.time_tag : d[0],
+              value: Number.isFinite(isObj ? d.kp : parseFloat(d[1])) ? (isObj ? d.kp : parseFloat(d[1])) : 0,
+            }));
         }
       }
 
@@ -224,8 +242,8 @@ module.exports = function (app, ctx) {
             date: `${d['time-tag'] || d.time_tag || ''}`,
             value: Math.round(d.ssn || d['ISES SSN'] || 0),
           }));
-          if (!result.ssn.current) {
-            result.ssn.current = result.ssn.history[result.ssn.history.length - 1]?.value || null;
+          if (result.ssn.current == null) {
+            result.ssn.current = result.ssn.history[result.ssn.history.length - 1]?.value ?? null;
           }
         }
       }
@@ -429,9 +447,42 @@ module.exports = function (app, ctx) {
 
   // NASA Dial-A-Moon
   let moonImageCache = { buffer: null, contentType: null, timestamp: 0 };
+  let moonMetaCache = { data: null, timestamp: 0 };
   let moonImageNegativeCache = 0;
   const MOON_CACHE_TTL = 60 * 60 * 1000;
   const MOON_NEGATIVE_CACHE_TTL = 5 * 60 * 1000;
+
+  // Shared fetch: retrieves both image and metadata from Dial-A-Moon API
+  async function fetchDialAMoon() {
+    const now = new Date();
+    const ts = now.toISOString().slice(0, 16);
+
+    const apiUrl = `https://svs.gsfc.nasa.gov/api/dialamoon/${ts}`;
+    const metaResponse = await fetch(apiUrl);
+    if (!metaResponse.ok) throw new Error(`Dial-A-Moon API returned ${metaResponse.status}`);
+    const meta = await metaResponse.json();
+
+    // Cache metadata (phase %, age, diameter, distance)
+    moonMetaCache = {
+      data: {
+        phase: meta.phase ?? null,
+        age: meta.age ?? null,
+        diameter: meta.diameter ?? null,
+        distance: meta.distance ?? null,
+      },
+      timestamp: Date.now(),
+    };
+
+    const imageUrl = meta?.image?.url;
+    if (!imageUrl) throw new Error('No image URL in Dial-A-Moon response');
+
+    const imgResponse = await fetch(imageUrl);
+    if (!imgResponse.ok) throw new Error(`Moon image fetch returned ${imgResponse.status}`);
+    const buffer = Buffer.from(await imgResponse.arrayBuffer());
+    const contentType = imgResponse.headers.get('content-type') || 'image/jpeg';
+
+    moonImageCache = { buffer, contentType, timestamp: Date.now() };
+  }
 
   app.get('/api/moon-image', async (req, res) => {
     try {
@@ -450,27 +501,11 @@ module.exports = function (app, ctx) {
         return res.status(503).json({ error: 'Moon image temporarily unavailable' });
       }
 
-      const now = new Date();
-      const ts = now.toISOString().slice(0, 16);
+      await fetchDialAMoon();
 
-      const apiUrl = `https://svs.gsfc.nasa.gov/api/dialamoon/${ts}`;
-      const metaResponse = await fetch(apiUrl);
-      if (!metaResponse.ok) throw new Error(`Dial-A-Moon API returned ${metaResponse.status}`);
-      const meta = await metaResponse.json();
-
-      const imageUrl = meta?.image?.url;
-      if (!imageUrl) throw new Error('No image URL in Dial-A-Moon response');
-
-      const imgResponse = await fetch(imageUrl);
-      if (!imgResponse.ok) throw new Error(`Moon image fetch returned ${imgResponse.status}`);
-      const buffer = Buffer.from(await imgResponse.arrayBuffer());
-      const contentType = imgResponse.headers.get('content-type') || 'image/jpeg';
-
-      moonImageCache = { buffer, contentType, timestamp: Date.now() };
-
-      res.set('Content-Type', contentType);
+      res.set('Content-Type', moonImageCache.contentType);
       res.set('Cache-Control', 'public, max-age=3600');
-      res.send(buffer);
+      res.send(moonImageCache.buffer);
     } catch (error) {
       moonImageNegativeCache = Date.now();
       logErrorOnce('Moon Image', error.message);
@@ -479,6 +514,30 @@ module.exports = function (app, ctx) {
         return res.send(moonImageCache.buffer);
       }
       res.status(500).json({ error: 'Failed to fetch moon image' });
+    }
+  });
+
+  // Moon metadata from Dial-A-Moon (phase %, age, diameter, distance)
+  // Piggybacks on the same cache — no extra NASA requests.
+  app.get('/api/moon-data', async (req, res) => {
+    try {
+      // If metadata is stale but image cache is also stale, fetch both
+      if (!moonMetaCache.data || Date.now() - moonMetaCache.timestamp >= MOON_CACHE_TTL) {
+        if (!moonImageCache.buffer || Date.now() - moonImageCache.timestamp >= MOON_CACHE_TTL) {
+          if (Date.now() - moonImageNegativeCache >= MOON_NEGATIVE_CACHE_TTL) {
+            await fetchDialAMoon();
+          }
+        }
+      }
+      if (moonMetaCache.data) {
+        res.set('Cache-Control', 'public, max-age=3600');
+        return res.json(moonMetaCache.data);
+      }
+      res.status(503).json({ error: 'Moon data not yet available' });
+    } catch (error) {
+      moonImageNegativeCache = Date.now();
+      logErrorOnce('Moon Data', error.message);
+      res.status(503).json({ error: 'Moon data temporarily unavailable' });
     }
   });
 
@@ -529,10 +588,18 @@ module.exports = function (app, ctx) {
       const parsed = parseN0NBHxml(xml);
 
       n0nbhCache = { data: parsed, timestamp: Date.now() };
-      res.json(parsed);
+      res.json({ ...parsed, fetchedAt: n0nbhCache.timestamp });
     } catch (error) {
       logErrorOnce('N0NBH', error.message);
-      if (n0nbhCache.data) return res.json(n0nbhCache.data);
+      if (n0nbhCache.data) {
+        const age = Date.now() - n0nbhCache.timestamp;
+        if (age > N0NBH_MAX_STALE_TTL) {
+          // Cache is too old to be useful; tell the client so it can show a
+          // meaningful error rather than silently displaying stale conditions.
+          return res.status(503).json({ error: 'N0NBH data unavailable and cached data is too stale' });
+        }
+        return res.json({ ...n0nbhCache.data, fetchedAt: n0nbhCache.timestamp, stale: true });
+      }
       res.status(500).json({ error: 'Failed to fetch N0NBH data' });
     }
   });
@@ -558,7 +625,8 @@ module.exports = function (app, ctx) {
     try {
       const response = await fetch('https://www.hamqsl.com/solarxml.php');
       const xml = await response.text();
-      n0nbhCache = { data: parseN0NBHxml(xml), timestamp: Date.now() };
+      const ts = Date.now();
+      n0nbhCache = { data: { ...parseN0NBHxml(xml), fetchedAt: ts }, timestamp: ts };
       logInfo('[Startup] N0NBH solar data pre-warmed');
     } catch (e) {
       logWarn('[Startup] N0NBH pre-warm failed:', e.message);
