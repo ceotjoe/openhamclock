@@ -2,20 +2,34 @@
 /**
  * wsjtx-relay.js — WSJT-X Relay integration plugin
  *
- * Listens for WSJT-X UDP packets on the local machine and forwards decoded
- * messages in batches to an OpenHamClock server via HTTPS.
+ * Listens for WSJT-X UDP packets on the local machine and:
+ *  1. Emits enriched events on the plugin bus for local SSE consumers.
+ *  2. Optionally forwards raw decoded messages in batches to an OpenHamClock
+ *     server via HTTPS.
+ *
+ * Enrichments applied locally (no server required)
+ * ─────────────────────────────────────────────────
+ *  decode   — FT8/FT4 message text parsed (type/caller/modifier/dxCall/deCall),
+ *             in-message grid → lat/lon, grid cache fallback, band name, dedup ID
+ *  status   — band name, band-change detection, DX lat/lon (from dxGrid or cache),
+ *             DE lat/lon (from deGrid)
+ *  qso      — band name, dxGrid → lat/lon, QSO deduplication (60 s window)
+ *  wspr     — band name, grid → lat/lon              (new — was not emitted before)
+ *  clear    — forwarded as-is                         (new — was not emitted before)
  *
  * Configuration (config.wsjtxRelay):
- *   enabled       boolean  Whether the relay is active (default: false)
- *   url           string   OpenHamClock server URL (e.g. https://openhamclock.com)
- *   key           string   Relay authentication key
- *   session       string   Browser session ID for per-user isolation
+ *   enabled            boolean  Whether the relay is active (default: false)
+ *   url                string   OpenHamClock server URL (e.g. https://openhamclock.com)
+ *   key                string   Relay authentication key
+ *   session            string   Browser session ID for per-user isolation
+ *   myCall             string   Operator callsign (improves QSO direction detection)
  *   udpPort            number   UDP port to listen on (default: 2237)
  *   batchInterval      number   Batch send interval in ms (default: 2000)
  *   verbose            boolean  Log all decoded messages (default: false)
  *   multicast          boolean  Join a multicast group (default: false)
  *   multicastGroup     string   Multicast group IP (default: '224.0.0.1')
  *   multicastInterface string   Local NIC IP for multi-homed systems; '' = OS default
+ *   relayToServer      boolean  Forward raw messages to OHC server (default: false)
  */
 
 const dgram = require('dgram');
@@ -30,6 +44,7 @@ const {
   buildFreeText,
   buildHighlightCallsign,
 } = require('../lib/wsjtx-protocol');
+const { createGridCache, enrichDecode, enrichStatus, enrichQso, enrichWspr } = require('../lib/wsjtx-enrich');
 
 const RELAY_VERSION = require('../package.json').version;
 
@@ -141,6 +156,7 @@ const descriptor = {
     const mcGroup = cfg.multicastGroup || '224.0.0.1';
     const mcInterface = cfg.multicastInterface || undefined; // undefined → OS picks NIC
 
+    // ── Server relay state ──────────────────────────────────────────────────
     let socket = null;
     let batchTimer = null;
     let heartbeatInterval = null;
@@ -158,6 +174,23 @@ const descriptor = {
     let remoteAddress = null;
     let remotePort = null;
     let appId = 'WSJT-X'; // Updated from heartbeat/status messages
+
+    // ── Local enrichment state ──────────────────────────────────────────────
+    // Shared grid cache: remembers callsign → grid from CQ/exchange messages
+    const gridCache = createGridCache();
+    // Per-client state needed for decode enrichment (band, freq, mode)
+    const clientStates = Object.create(null); // clientId → { band, dialFrequency, mode }
+    // Content-based decode deduplication (time + freq + message text)
+    const seenDecodeIds = new Set();
+    const SEEN_DECODE_MAX = 2000; // keep at most this many IDs to bound memory
+    // QSO deduplication: track recent logged QSOs (call + freq + mode, 60 s window)
+    const recentQsos = []; // { dxCall, frequency, mode, timestamp }
+    const QSO_DEDUP_MS = 60_000;
+    const QSO_DEDUP_MAX = 200; // max entries to scan
+    // Prune grid cache every 5 minutes
+    let gridPruneInterval = null;
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
 
     function getInterval() {
       if (consecutiveErrors === 0) return cfg.batchInterval || 2000;
@@ -287,6 +320,113 @@ const descriptor = {
       });
     }
 
+    // ── Message handler ─────────────────────────────────────────────────────
+
+    function handleMessage(buf, rinfo) {
+      const msg = parseMessage(buf);
+      if (!msg) return;
+
+      // Track sender for bidirectional communication
+      remoteAddress = rinfo.address;
+      remotePort = rinfo.port;
+      if (msg.id) appId = msg.id;
+
+      // Queue raw message for server relay (unmodified — server does its own enrichment)
+      if (msg.type !== WSJTX_MSG.REPLAY && willRelay) {
+        messageQueue.push(msg);
+      }
+
+      switch (msg.type) {
+        case WSJTX_MSG.STATUS: {
+          const prevState = clientStates[msg.id] ?? null;
+          const enriched = enrichStatus(msg, prevState, gridCache);
+
+          // Update per-client state for decode enrichment
+          clientStates[msg.id] = {
+            band: enriched.band,
+            dialFrequency: msg.dialFrequency,
+            mode: msg.mode,
+          };
+
+          if (bus) bus.emit('status', { source: 'wsjtx-relay', ...msg, ...enriched });
+          break;
+        }
+
+        case WSJTX_MSG.DECODE: {
+          if (!msg.isNew) break;
+          totalDecodes++;
+
+          const clientState = clientStates[msg.id] ?? null;
+          const decode = enrichDecode(msg, clientState, gridCache, cfg.myCall ?? null);
+
+          // Content-based deduplication — skip if we have already emitted this decode
+          if (seenDecodeIds.has(decode.id)) break;
+          seenDecodeIds.add(decode.id);
+          // Bound the set size by evicting the oldest entry when over limit
+          if (seenDecodeIds.size > SEEN_DECODE_MAX) {
+            seenDecodeIds.delete(seenDecodeIds.values().next().value);
+          }
+
+          if (bus) bus.emit('decode', { source: 'wsjtx-relay', ...decode });
+
+          if (cfg.verbose) {
+            const snr = decode.snr != null ? (decode.snr >= 0 ? `+${decode.snr}` : decode.snr) : '?';
+            console.log(`[WsjtxRelay] Decode ${decode.time} ${snr}dB ${decode.freq}Hz ${decode.message}`);
+          }
+          break;
+        }
+
+        case WSJTX_MSG.CLEAR: {
+          // WSJT-X cleared its band activity window — forward so the UI can react
+          if (bus) bus.emit('clear', { source: 'wsjtx-relay', clientId: msg.id, window: msg.window });
+          // Also clear seen-decode IDs for this client so a replay after a manual
+          // clear is treated as fresh decodes
+          for (const id of seenDecodeIds) {
+            if (id.startsWith(`${msg.id}-`)) seenDecodeIds.delete(id);
+          }
+          break;
+        }
+
+        case WSJTX_MSG.QSO_LOGGED: {
+          const qso = {
+            ...enrichQso(msg),
+            // Fill myCall/myGrid from client state when not present in the message
+            myCall: msg.myCall || clientStates[msg.id]?.deCall || null,
+            myGrid: msg.myGrid || clientStates[msg.id]?.deGrid || null,
+          };
+
+          // Deduplicate: same call + frequency + mode within 60 s
+          const now = Date.now();
+          const isDup = recentQsos.some(
+            (q) =>
+              q.dxCall === qso.dxCall &&
+              q.frequency === qso.frequency &&
+              q.mode === qso.mode &&
+              now - q.timestamp < QSO_DEDUP_MS,
+          );
+          if (!isDup) {
+            recentQsos.push({ dxCall: qso.dxCall, frequency: qso.frequency, mode: qso.mode, timestamp: now });
+            if (recentQsos.length > QSO_DEDUP_MAX) recentQsos.shift();
+            if (bus) bus.emit('qso', { source: 'wsjtx-relay', ...qso });
+          }
+          break;
+        }
+
+        case WSJTX_MSG.WSPR_DECODE: {
+          if (!msg.isNew) break;
+          const wspr = enrichWspr(msg);
+          if (bus) bus.emit('wspr', { source: 'wsjtx-relay', ...wspr });
+          break;
+        }
+
+        // HEARTBEAT and CLOSE need no SSE event; REPLAY is filtered above.
+        default:
+          break;
+      }
+    }
+
+    // ── connect / disconnect ─────────────────────────────────────────────────
+
     function connect() {
       // Determine whether server relay is active for this session.
       // relayToServer requires url + key + session to all be set.
@@ -315,29 +455,7 @@ const descriptor = {
       const udpPort = cfg.udpPort || 2237;
       socket = dgram.createSocket('udp4');
 
-      socket.on('message', (buf, rinfo) => {
-        const msg = parseMessage(buf);
-        if (!msg) return;
-        // Track sender for bidirectional communication
-        remoteAddress = rinfo.address;
-        remotePort = rinfo.port;
-        if (msg.id) appId = msg.id;
-        if (msg.type === WSJTX_MSG.DECODE && msg.isNew) {
-          totalDecodes++;
-          if (bus) bus.emit('decode', { source: 'wsjtx-relay', ...msg });
-        }
-        if (msg.type === WSJTX_MSG.STATUS && bus) bus.emit('status', { source: 'wsjtx-relay', ...msg });
-        if (msg.type === WSJTX_MSG.QSO_LOGGED && bus) bus.emit('qso', { source: 'wsjtx-relay', ...msg });
-        if (msg.type !== WSJTX_MSG.REPLAY) {
-          if (willRelay) messageQueue.push(msg);
-          if (cfg.verbose && msg.type === WSJTX_MSG.DECODE) {
-            const snr = msg.snr != null ? (msg.snr >= 0 ? `+${msg.snr}` : msg.snr) : '?';
-            console.log(
-              `[WsjtxRelay] Decode ${msg.time?.formatted || '??'} ${snr}dB ${msg.deltaFreq}Hz ${msg.message}`,
-            );
-          }
-        }
-      });
+      socket.on('message', handleMessage);
 
       socket.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
@@ -351,7 +469,6 @@ const descriptor = {
       socket.on('listening', () => {
         const addr = socket.address();
         console.log(`[WsjtxRelay] Listening for WSJT-X on UDP ${addr.address}:${addr.port}`);
-        console.log(`[WsjtxRelay] Relaying to ${serverUrl}`);
 
         if (mcEnabled) {
           try {
@@ -366,7 +483,11 @@ const descriptor = {
           }
         }
 
+        // Prune grid cache every 5 minutes to release stale entries
+        gridPruneInterval = setInterval(() => gridCache.prune(), 5 * 60 * 1000);
+
         if (willRelay) {
+          console.log(`[WsjtxRelay] Relaying to ${serverUrl}`);
           scheduleBatch();
 
           // Initial health check then heartbeat
@@ -418,6 +539,10 @@ const descriptor = {
         clearInterval(healthInterval);
         healthInterval = null;
       }
+      if (gridPruneInterval) {
+        clearInterval(gridPruneInterval);
+        gridPruneInterval = null;
+      }
       if (socket) {
         if (mcEnabled) {
           try {
@@ -452,6 +577,7 @@ const descriptor = {
         serverUrl: willRelay ? serverUrl : null,
         multicast: mcEnabled,
         multicastGroup: mcEnabled ? mcGroup : null,
+        gridCacheSize: gridCache.size,
       };
     }
 
