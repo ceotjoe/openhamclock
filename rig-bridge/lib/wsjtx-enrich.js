@@ -344,7 +344,7 @@ function parseDecodeMessage(text, gridCache, myCall) {
   //          "CQ DX CALLSIGN GRID"
   //          "CQ POTA N0VIG EM28"
   if (/^CQ\s/i.test(text)) {
-    result.type = 'cq';
+    result.type = 'CQ';
     const tokens = text.split(/\s+/).slice(1); // drop leading "CQ"
 
     // Last token may be a grid square
@@ -373,7 +373,7 @@ function parseDecodeMessage(text, gridCache, myCall) {
   // Exchange examples: grid (EN82), report (+05, -12, R+05, R-12), 73, RR73
   const qsoMatch = text.match(/^([A-Z0-9/<>.]+)\s+([A-Z0-9/<>.]+)\s+(.*)/i);
   if (qsoMatch) {
-    result.type = 'qso';
+    result.type = 'QSO';
     result.dxCall = qsoMatch[1];
     result.deCall = qsoMatch[2];
     result.exchange = qsoMatch[3].trim();
