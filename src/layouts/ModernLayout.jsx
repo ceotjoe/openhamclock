@@ -267,8 +267,8 @@ export default function ModernLayout(props) {
               style={{
                 fontFamily: 'JetBrains Mono',
                 fontSize: '14px',
-                color: 'var(--accent-green)',
-                opacity: 0.85,
+                fontWeight: '900',
+                color: 'var(--accent-amber)',
                 whiteSpace: 'nowrap',
               }}
             >

@@ -2149,9 +2149,10 @@ export default function ClassicLayout(props) {
               {dxCallsign && (
                 <span
                   style={{
-                    color: 'var(--text-muted)',
+                    color: 'var(--accent-amber)',
                     fontSize: '14px',
                     fontFamily: 'JetBrains Mono',
+                    fontWeight: '900',
                     whiteSpace: 'nowrap',
                   }}
                 >
