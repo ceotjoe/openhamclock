@@ -129,7 +129,12 @@ export default function ModernLayout(props) {
   const isMobile = breakpoint === 'mobile';
   const isTablet = breakpoint === 'tablet';
 
-  const handleParkSpotClick = (spot) => tuneTo(spot);
+  const handleParkSpotClick = (spot) => {
+    tuneTo(spot);
+    if (spot.lat != null && spot.lon != null) {
+      handleDXChange({ lat: spot.lat, lon: spot.lon, callsign: spot.call ?? null });
+    }
+  };
   const handleDXSpotClick = (spot) => {
     tuneTo(spot);
     const path = findDXPathForSpot(dxClusterData.paths || [], spot);

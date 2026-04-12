@@ -168,6 +168,9 @@ export default function ClassicLayout(props) {
   // Handler for POTA/WWFF/SOTA spot clicks
   const handleParkSpotClick = (spot) => {
     tuneTo(spot);
+    if (spot.lat != null && spot.lon != null) {
+      handleDXChange({ lat: spot.lat, lon: spot.lon, callsign: spot.call ?? null });
+    }
   };
 
   // Kp color coding
