@@ -119,6 +119,8 @@
   "ibp.slotProgress.tooltip": "{{secs}} seconds remaining in this transmission slot",
   "ibp.footer": "NCDXF / IARU International Beacon Project",
   "ibp.tune": "Tune to {{mhz}} MHz",
+  "ibp.rbn.heard": "RBN {{count}}× {{snr}}dB",
+  "ibp.rbn.tooltip": "Heard by {{count}} RBN skimmer(s), best SNR {{snr}} dB",
   "band.conditions": "⌇ BAND CONDITIONS",
   "band.conditions.fair": "FAIR",
   "band.conditions.good": "GOOD",

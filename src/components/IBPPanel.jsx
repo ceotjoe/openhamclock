@@ -7,6 +7,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import { useIBP } from '../hooks/useIBP';
+import { useIBPRBN } from '../hooks/useIBPRBN';
 import { useRig } from '../contexts/RigContext';
 import { formatDistance } from '../utils/geo';
 import { DEFAULT_BAND_COLORS } from '../utils/bandColors';
@@ -24,6 +25,7 @@ export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
   const { t } = useTranslation();
   const { schedule, secondsLeft, cycleSecondsLeft, slotProgress } = useIBP(deLat, deLon);
   const { enabled: rigEnabled, tuneTo } = useRig();
+  const rbnData = useIBPRBN();
 
   const hasQTH = deLat != null && deLon != null;
 
@@ -73,6 +75,7 @@ export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
         {schedule.map(({ band, beacon, bearing, distanceKm }) => {
           const bandColor = DEFAULT_BAND_COLORS[band.label] ?? 'var(--text-muted)';
+          const rbn = rbnData.get(beacon.callsign);
 
           return (
             <div
@@ -135,6 +138,22 @@ export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
                 >
                   {beacon.location}
                 </div>
+                {rbn && (
+                  <div
+                    title={t('ibp.rbn.tooltip', { count: rbn.count, snr: rbn.maxSNR ?? '?' })}
+                    style={{
+                      fontSize: '9px',
+                      color: 'var(--accent-green, #4caf50)',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {t('ibp.rbn.heard', {
+                      count: rbn.count,
+                      snr: rbn.maxSNR != null ? (rbn.maxSNR >= 0 ? `+${rbn.maxSNR}` : `${rbn.maxSNR}`) : '?',
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Bearing + distance (only when QTH is known) */}
