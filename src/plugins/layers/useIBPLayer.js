@@ -231,7 +231,7 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
           });
           marker.bindPopup(popupHtml);
           marker.on('click', () => {
-            if (rigRef.current.rigEnabled) rigRef.current.tuneTo(primaryBand.mhz);
+            if (rigRef.current.rigEnabled) rigRef.current.tuneTo(primaryBand.mhz, 'CW');
           });
           marker.addTo(map);
           layersRef.current.push(marker);

@@ -80,7 +80,7 @@ export const IBPPanel = ({ deLat = null, deLon = null, units = 'metric' }) => {
           return (
             <div
               key={band.mhz}
-              onClick={rigEnabled ? () => tuneTo(band.mhz) : undefined}
+              onClick={rigEnabled ? () => tuneTo(band.mhz, 'CW') : undefined}
               title={rigEnabled ? t('ibp.tune', { mhz: band.mhz.toFixed(3) }) : undefined}
               style={{
                 display: 'grid',
