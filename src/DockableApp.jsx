@@ -521,50 +521,56 @@ export const DockableApp = ({
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
           <div style={{ fontFamily: 'JetBrains Mono', fontSize: '14px', flex: '1 1 auto', minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <DXGridInput
-                dxGrid={dxGrid}
-                onDXChange={handleDXChange}
-                dxLocked={dxLocked}
-                style={{
-                  color: 'var(--accent-amber)',
-                  fontSize: '22px',
-                  fontWeight: '700',
-                  flex: '1 1 auto',
-                }}
-              />
-              {dxCallsign && (
-                <span
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <DXGridInput
+                  dxGrid={dxGrid}
+                  onDXChange={handleDXChange}
+                  dxLocked={dxLocked}
                   style={{
-                    fontFamily: 'JetBrains Mono',
-                    fontSize: '22px',
-                    fontWeight: '900',
                     color: 'var(--accent-amber)',
-                    whiteSpace: 'nowrap',
+                    fontSize: '22px',
+                    fontWeight: '700',
+                    flex: '0 0 auto',
+                  }}
+                />
+                {dxCallsign && (
+                  <span
+                    style={{
+                      fontFamily: 'JetBrains Mono',
+                      fontSize: '22px',
+                      fontWeight: '900',
+                      color: 'var(--accent-amber)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {dxCallsign}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <DXFavorites dxLocation={dxLocation} dxGrid={dxGrid} onDXChange={handleDXChange} dxLocked={dxLocked} />
+                <button
+                  type="button"
+                  onClick={() => setShowDxccSelect((prev) => !prev)}
+                  title={t('app.dxLocation.dxccToggleTitle')}
+                  style={{
+                    background: showDxccSelect ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                    color: showDxccSelect ? '#000' : 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    fontSize: '12px',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    cursor: 'pointer',
+                    flex: '0 0 auto',
                   }}
                 >
-                  {dxCallsign}
-                </span>
-              )}
-              <DXFavorites dxLocation={dxLocation} dxGrid={dxGrid} onDXChange={handleDXChange} dxLocked={dxLocked} />
-              <button
-                type="button"
-                onClick={() => setShowDxccSelect((prev) => !prev)}
-                title={t('app.dxLocation.dxccToggleTitle')}
-                style={{
-                  background: showDxccSelect ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
-                  color: showDxccSelect ? '#000' : 'var(--text-secondary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '4px',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  cursor: 'pointer',
-                  flex: '0 0 auto',
-                }}
-              >
-                DXCC
-              </button>
+                  DXCC
+                </button>
+              </div>
             </div>
             {showDxccSelect && (
               <DXCCSelect dxLocked={dxLocked} onDXChange={handleDXChange} style={{ margin: '5px 0 10px 0' }} />
