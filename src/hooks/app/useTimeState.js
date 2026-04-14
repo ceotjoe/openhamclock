@@ -64,8 +64,15 @@ export default function useTimeState(configLocation, dxLocation, timezone) {
   const localTimeOpts = { hour12: use12Hour };
   const localDateOpts = { weekday: 'short', month: 'short', day: 'numeric' };
   if (timezone) {
-    localTimeOpts.timeZone = timezone;
-    localDateOpts.timeZone = timezone;
+    try {
+      // Validate before use — an invalid timezone (e.g. "Etc/Unknown" from a
+      // misconfigured Docker container) would throw a RangeError here.
+      Intl.DateTimeFormat('en-US', { timeZone: timezone });
+      localTimeOpts.timeZone = timezone;
+      localDateOpts.timeZone = timezone;
+    } catch (e) {
+      // Fall back to browser timezone
+    }
   }
   const localTime = currentTime.toLocaleTimeString('en-US', localTimeOpts);
   const localDate = currentTime.toLocaleDateString('en-US', localDateOpts);
