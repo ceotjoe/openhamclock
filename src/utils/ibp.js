@@ -37,14 +37,17 @@ export const IBP_BEACONS = [
 ];
 
 /**
- * The 5 IBP frequencies in MHz.
- * Band offsets: each band starts 3 beacon slots ahead of the previous.
+ * The 5 IBP frequencies in MHz, with schedule offsets.
+ *
+ * Each beacon enters the cycle on 14.100 MHz, then steps UP one band every
+ * 10 s: 14.100 → 18.110 → 21.150 → 24.930 → 28.200.  At a given slot s
+ * the beacon on band N started N slots earlier, so its offset is (−N mod 18):
+ *   20m: −0 mod 18 = 0
+ *   17m: −1 mod 18 = 17
+ *   15m: −2 mod 18 = 16
+ *   12m: −3 mod 18 = 15
+ *   10m: −4 mod 18 = 14
  */
-// Each beacon enters the cycle on 14.100 MHz, then steps up one band every
-// 10 seconds: 14.100 → 18.110 → 21.150 → 24.930 → 28.200.
-// So at any slot s, the beacon on 18.110 started one slot earlier (s-1),
-// 21.150 started two slots earlier (s-2), and so on.
-// Offsets are expressed mod 18 as positive values: 0, 17, 16, 15, 14.
 export const IBP_BANDS = [
   { mhz: 14.1, label: '20m', offset: 0 },
   { mhz: 18.11, label: '17m', offset: 17 },
@@ -125,6 +128,7 @@ export const getSchedule = (date = new Date(), deLat = null, deLon = null) => {
 /**
  * Return the full upcoming schedule for the next `numCycles` 3-minute cycles.
  * Useful for rendering a timeline.
+ * TODO: consumed by Phase 4 (listening log timeline) — not yet used in this PR.
  *
  * @param {Date}   date
  * @param {number} numCycles

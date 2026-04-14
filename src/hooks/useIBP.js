@@ -48,6 +48,8 @@ export const useIBP = (deLat = null, deLon = null) => {
 
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
+    // Interval is intentionally unconditional: both IBPPanel and useIBPLayer consume
+    // this state, and a 1-second tick shared across all consumers is negligible overhead.
   }, []); // no deps — deRef keeps position current without re-subscribing
 
   // Recompute bearings/distances immediately when QTH changes

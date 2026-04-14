@@ -98,7 +98,7 @@ function buildPopup(beacon, activeBands, secondsLeft) {
   const activeLines = activeBands
     .map(
       (b) =>
-        `<span style="color:${DEFAULT_BAND_COLORS[b.label] ?? '#aaa'};font-weight:700;">${b.label} ${b.mhz.toFixed(3)} MHz</span>`,
+        `<span style="color:${DEFAULT_BAND_COLORS[b.label] ?? 'var(--text-muted)'};font-weight:700;">${b.label} ${b.mhz.toFixed(3)} MHz</span>`,
     )
     .join('<br>');
 
@@ -111,18 +111,18 @@ function buildPopup(beacon, activeBands, secondsLeft) {
   return `
     <div style="font-family:'JetBrains Mono',monospace;font-size:12px;min-width:170px;">
       <div style="font-weight:700;font-size:13px;margin-bottom:4px;">${esc(beacon.callsign)}</div>
-      <div style="color:#aaa;margin-bottom:4px;">${esc(beacon.location)}</div>
-      <div style="color:#888;font-size:10px;margin-bottom:6px;">Grid: ${esc(beacon.grid)}</div>
+      <div style="color:var(--text-muted);margin-bottom:4px;">${esc(beacon.location)}</div>
+      <div style="color:var(--text-muted);font-size:10px;margin-bottom:6px;">Grid: ${esc(beacon.grid)}</div>
       ${
         activeBands.length > 0
           ? `<div style="margin-bottom:4px;">▶ Active now:<br>${activeLines}</div>
-             <div style="font-size:10px;color:#aaa;">Slot ends in ${secondsLeft}s</div>`
-          : `<div style="color:#888;font-size:10px;">Next on 14.100 in ~${nextIn}s</div>`
+             <div style="font-size:10px;color:var(--text-muted);">Slot ends in ${secondsLeft}s</div>`
+          : `<div style="color:var(--text-muted);font-size:10px;">Next on 14.100 in ~${nextIn}s</div>`
       }
     </div>`;
 }
 
-export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
+export function useLayer({ enabled = false, opacity = 0.85, map = null, deLat = null, deLon = null }) {
   const [slot, setSlot] = useState(() => getCurrentSlot(new Date()));
   const [secondsLeft, setSecondsLeft] = useState(() => getSecondsRemainingInSlot(new Date()));
   const [showPaths, setShowPaths] = useState(true);
@@ -173,8 +173,13 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
 
     if (!enabled) return;
 
-    const de = window.deLocation ?? null;
-    const hasDE = de != null && Number.isFinite(de.lat) && Number.isFinite(de.lon);
+    const hasDE = Number.isFinite(deLat) && Number.isFinite(deLon);
+    const de = hasDE ? { lat: deLat, lon: deLon } : null;
+
+    // Resolve CSS variables for Leaflet SVG options (can't use var(--x) in JS object props)
+    const cs = getComputedStyle(document.documentElement);
+    const colorInactiveFill = cs.getPropertyValue('--text-muted').trim() || '#666';
+    const colorInactiveStroke = cs.getPropertyValue('--border-color').trim() || '#999';
 
     // Build a lookup: beaconIndex → array of active bands
     const activeBandsByBeacon = new Map();
@@ -241,8 +246,8 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
         replicatePoint(beacon.lat, beacon.lon).forEach(([lat, lon]) => {
           const marker = L.circleMarker([lat, lon], {
             radius: 4,
-            fillColor: '#666',
-            color: '#999',
+            fillColor: colorInactiveFill,
+            color: colorInactiveStroke,
             weight: 1,
             opacity: opacity * 0.5,
             fillOpacity: opacity * 0.35,
@@ -253,7 +258,7 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
         });
       }
     });
-  }, [map, enabled, slot, showPaths, showInactive, bandFilter, opacity]);
+  }, [map, enabled, slot, showPaths, showInactive, bandFilter, opacity, deLat, deLon]);
 
   // Control panel — created once, stats updated separately
   useEffect(() => {
@@ -295,22 +300,17 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
             NCDXF / IARU • deterministic schedule
           </div>`;
 
-        setTimeout(() => {
-          const bandSel = document.getElementById('ibp-band-select');
-          const pathsCk = document.getElementById('ibp-paths');
-          const inactiveCk = document.getElementById('ibp-inactive');
+        // Wire up event listeners directly — div is in-memory, no setTimeout needed
+        const bandSel = div.querySelector('#ibp-band-select');
+        const pathsCk = div.querySelector('#ibp-paths');
+        const inactiveCk = div.querySelector('#ibp-inactive');
 
-          if (bandSel) {
-            bandSel.value = bandFilterRef.current;
-            bandSel.addEventListener('change', (e) => setBandFilter(e.target.value));
-          }
-          if (pathsCk) {
-            pathsCk.addEventListener('change', (e) => setShowPaths(e.target.checked));
-          }
-          if (inactiveCk) {
-            inactiveCk.addEventListener('change', (e) => setShowInactive(e.target.checked));
-          }
-        }, 100);
+        if (bandSel) {
+          bandSel.value = bandFilterRef.current;
+          bandSel.addEventListener('change', (e) => setBandFilter(e.target.value));
+        }
+        if (pathsCk) pathsCk.addEventListener('change', (e) => setShowPaths(e.target.checked));
+        if (inactiveCk) inactiveCk.addEventListener('change', (e) => setShowInactive(e.target.checked));
 
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
@@ -322,9 +322,11 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
     map.addControl(control);
     controlRef.current = control;
 
-    setTimeout(() => {
-      const container = document.querySelector('.ibp-layer-control');
-      if (container) {
+    // Double-rAF: first frame Leaflet inserts the element, second frame it's painted
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const container = controlRef.current?.getContainer()?.querySelector('.ibp-layer-control');
+        if (!container) return;
         const saved = localStorage.getItem('ibp-panel-position');
         if (saved) {
           try {
@@ -341,8 +343,8 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
           contentClassName: 'ibp-panel-content',
           buttonClassName: 'ibp-minimize-btn',
         });
-      }
-    }, 150);
+      }),
+    );
 
     return () => {
       if (controlRef.current) {
@@ -357,7 +359,6 @@ export function useLayer({ enabled = false, opacity = 0.85, map = null }) {
     if (!enabled || !controlRef.current) return;
     const el = controlRef.current.getContainer()?.querySelector('#ibp-countdown');
     if (!el) return;
-    const elapsed = SLOT_SECONDS - secondsLeft;
     el.textContent = `Slot ${slot + 1}/18 — ${secondsLeft}s remaining`;
     // Colour the countdown amber in the last 3 seconds
     el.style.color = secondsLeft <= 3 ? 'var(--accent-amber)' : 'var(--text-secondary)';

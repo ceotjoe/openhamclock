@@ -26,6 +26,7 @@ async function fetchBeaconSpots(callsign) {
   if (!json.spots?.length) return null;
   const snrs = json.spots.map((s) => s.snr).filter((s) => s != null);
   const maxSNR = snrs.length ? Math.max(...snrs) : null;
+  // spot.callsign = the skimmer that heard the beacon; spot.dx = the beacon callsign
   const count = new Set(json.spots.map((s) => s.callsign)).size;
   return { maxSNR, count };
 }
