@@ -1,13 +1,10 @@
 /**
  * useIBPRBN — RBN cross-reference for IBP beacons
  *
- * Polls /api/rbn/spots for every IBP beacon callsign and returns a Map
- * of callsign → { maxSNR, count } so IBPPanel can show which beacons
- * are currently being heard by RBN skimmers.
- *
- * All 18 callsigns are queried once per poll (they hit the server's
- * in-memory RBN store — each lookup is O(1) and returns instantly if
- * the beacon hasn't been heard recently).
+ * Polls /api/rbn/spots?callsigns=... (bulk endpoint) for all 18 IBP beacon
+ * callsigns in a single request every 60 s, and returns a Map of
+ * callsign → { maxSNR, count } so IBPPanel can show which beacons are
+ * currently being heard by RBN skimmers.
  */
 import { useState, useEffect } from 'react';
 import { IBP_BEACONS } from '../utils/ibp.js';
@@ -17,18 +14,23 @@ const WINDOW_MINUTES = 5; // look back 5 min (covers ~1.7 full IBP cycles)
 
 const ALL_CALLSIGNS = IBP_BEACONS.map((b) => b.callsign);
 
-async function fetchBeaconSpots(callsign) {
-  const res = await fetch(`/api/rbn/spots?callsign=${encodeURIComponent(callsign)}&minutes=${WINDOW_MINUTES}&mode=dx`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) return null;
+async function fetchAllBeaconSpots() {
+  const res = await fetch(
+    `/api/rbn/spots?callsigns=${ALL_CALLSIGNS.map(encodeURIComponent).join(',')}&minutes=${WINDOW_MINUTES}`,
+    { headers: { Accept: 'application/json' } },
+  );
+  if (!res.ok) return new Map();
   const json = await res.json();
-  if (!json.spots?.length) return null;
-  const snrs = json.spots.map((s) => s.snr).filter((s) => s != null);
-  const maxSNR = snrs.length ? Math.max(...snrs) : null;
-  // spot.callsign = the skimmer that heard the beacon; spot.dx = the beacon callsign
-  const count = new Set(json.spots.map((s) => s.callsign)).size;
-  return { maxSNR, count };
+  const map = new Map();
+  for (const [cs, { spots }] of Object.entries(json.results ?? {})) {
+    if (!spots.length) continue;
+    const snrs = spots.map((s) => s.snr).filter((s) => s != null);
+    const maxSNR = snrs.length ? Math.max(...snrs) : null;
+    // spot.callsign = the skimmer that heard the beacon; spot.dx = the beacon callsign
+    const count = new Set(spots.map((s) => s.callsign)).size;
+    map.set(cs, { maxSNR, count });
+  }
+  return map;
 }
 
 /**
@@ -43,19 +45,10 @@ export function useIBPRBN() {
     let active = true;
 
     async function poll() {
-      const entries = await Promise.all(
-        ALL_CALLSIGNS.map(async (cs) => {
-          try {
-            const result = await fetchBeaconSpots(cs);
-            return result ? [cs, result] : null;
-          } catch (_) {
-            return null;
-          }
-        }),
-      );
-      if (active) {
-        setData(new Map(entries.filter(Boolean)));
-      }
+      try {
+        const result = await fetchAllBeaconSpots();
+        if (active) setData(result);
+      } catch (_) {}
     }
 
     poll();
@@ -64,7 +57,7 @@ export function useIBPRBN() {
       active = false;
       clearInterval(id);
     };
-  }, []); // poll all 18 callsigns — no deps needed, list is a constant
+  }, []); // no deps — ALL_CALLSIGNS is a module-level constant
 
   return data;
 }
