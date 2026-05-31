@@ -10,7 +10,7 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBandColor } from '../utils/callsign.js';
-import { IconSearch, IconRefresh, IconMap } from './Icons.jsx';
+import { IconSearch, IconRefresh, IconMap, IconTrash } from './Icons.jsx';
 import CallsignLink from './CallsignLink.jsx';
 
 const PSKReporterPanel = ({
@@ -94,9 +94,12 @@ const PSKReporterPanel = ({
     connected = false,
     source = '',
     refresh = () => {},
+    clear = () => {},
     filterMode = 'call',
     identifier = '',
   } = pskReporter;
+
+  const hasAnySpots = txCount > 0 || rxCount > 0;
 
   // ── PSK filtering ──
   const filterReports = (reports) => {
@@ -305,7 +308,7 @@ const PSKReporterPanel = ({
                     padding: '1px 4px',
                     borderRadius: '3px',
                     letterSpacing: '0.5px',
-                    fontFamily: "'JetBrains Mono', monospace",
+                    fontFamily: 'var(--font-mono)',
                   }}
                 >
                   ⊞ {identifier?.substring(0, 4)}
@@ -321,6 +324,18 @@ const PSKReporterPanel = ({
               >
                 <IconSearch size={11} style={{ verticalAlign: 'middle' }} />
                 {pskFilterCount > 0 ? pskFilterCount : ''}
+              </button>
+              <button
+                onClick={clear}
+                disabled={!hasAnySpots}
+                style={{
+                  ...iconBtn(false),
+                  opacity: hasAnySpots ? 1 : 0.4,
+                  cursor: hasAnySpots ? 'pointer' : 'not-allowed',
+                }}
+                title={t('pskReporterPanel.psk.clearTooltip')}
+              >
+                <IconTrash size={11} style={{ verticalAlign: 'middle' }} />
               </button>
               <button
                 onClick={refresh}
@@ -492,7 +507,7 @@ const PSKReporterPanel = ({
       </div>
 
       {/* ── Content area ── */}
-      <div style={{ flex: 1, overflow: 'auto', fontSize: '11px', fontFamily: "'JetBrains Mono', monospace" }}>
+      <div style={{ flex: 1, overflow: 'auto', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
         {/* === PSKReporter content === */}
         {panelMode === 'psk' && (
           <>

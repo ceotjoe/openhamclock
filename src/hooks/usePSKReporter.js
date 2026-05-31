@@ -219,6 +219,15 @@ export const usePSKReporter = (callsign, options = {}) => {
     return () => clearInterval(interval);
   }, [enabled, minutes]);
 
+  // Clear all spots from local state without reconnecting (#933 — band-change spot reset)
+  const clear = useCallback(() => {
+    txReportsRef.current = [];
+    rxReportsRef.current = [];
+    setTxReports([]);
+    setRxReports([]);
+    setLastUpdate(null);
+  }, []);
+
   // Manual refresh
   const refresh = useCallback(() => {
     console.debug('[PSKReporter] Manual refresh requested');
@@ -256,6 +265,7 @@ export const usePSKReporter = (callsign, options = {}) => {
     source,
     lastUpdate,
     refresh,
+    clear,
     filterMode,
     identifier,
   };
