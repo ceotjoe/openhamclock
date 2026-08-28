@@ -15,6 +15,7 @@ import { MAP_STYLES } from '../utils/config.js';
 import { createTileReprojector } from '../utils/tileReproject.js';
 import { createAzimuthalCRS } from '../utils/azimuthalCRS.js';
 import { matchesDXSpotPath } from '../utils/dxClusterSpotMatcher';
+import { ACTIVITY_COLORS } from '../utils/activityColors.js';
 
 // ── Projection Math ────────────────────────────────────────
 const DEG = Math.PI / 180;
@@ -317,6 +318,7 @@ export default function AzimuthalMap({
       panX: vs.cx - size.w / 2,
       panY: vs.cy - size.h / 2,
       lowMemory: lowMemoryMode,
+      pixelRatio: Math.max(1, window.devicePixelRatio || 1),
     })
       .then(() => setTilesReady(true))
       .catch(() => {});
@@ -377,7 +379,7 @@ export default function AzimuthalMap({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
     canvas.width = size.w * dpr;
     canvas.height = size.h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -413,6 +415,7 @@ export default function AzimuthalMap({
           panY: cy - size.h / 2,
           halfRes: interactingRef.current,
           lowMemory: lowMemoryMode,
+          pixelRatio: dpr,
         });
         if (imageData) {
           // putImageData ignores canvas transforms (DPR scaling), so paint
@@ -421,7 +424,9 @@ export default function AzimuthalMap({
           tmp.width = imageData.width;
           tmp.height = imageData.height;
           tmp.getContext('2d').putImageData(imageData, 0, 0);
-          ctx.drawImage(tmp, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(tmp, 0, 0, size.w, size.h);
           tileImageDrawn = true;
         }
       } catch (e) {
@@ -704,7 +709,7 @@ export default function AzimuthalMap({
         ctx.lineTo(p.x - 5, p.y + 4);
         ctx.lineTo(p.x + 5, p.y + 4);
         ctx.closePath();
-        ctx.fillStyle = '#44cc44';
+        ctx.fillStyle = ACTIVITY_COLORS.pota;
         ctx.fill();
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 0.5;
@@ -725,7 +730,7 @@ export default function AzimuthalMap({
         ctx.lineTo(p.x - 5, p.y - 4);
         ctx.lineTo(p.x + 5, p.y - 4);
         ctx.closePath();
-        ctx.fillStyle = '#a3f3a3';
+        ctx.fillStyle = ACTIVITY_COLORS.wwff;
         ctx.fill();
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 0.5;
@@ -744,7 +749,7 @@ export default function AzimuthalMap({
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(Math.PI / 4);
-        ctx.fillStyle = '#ff9632';
+        ctx.fillStyle = ACTIVITY_COLORS.sota;
         ctx.fillRect(-4, -4, 8, 8);
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 0.5;
@@ -761,10 +766,10 @@ export default function AzimuthalMap({
         if (!bandPassesMapFilter(band)) return;
 
         const p = toCanvas(spot.lat, spot.lon);
-        // Blue circle for WWBOTA
+        // WWBOTA circle — shared palette; this was #4488ff, the DE marker's blue
         ctx.beginPath();
         ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = '#4488ff';
+        ctx.fillStyle = ACTIVITY_COLORS.wwbota;
         ctx.fill();
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 0.5;

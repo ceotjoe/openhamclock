@@ -94,15 +94,15 @@ node server.js
 npm run dev
 ```
 
-### Enabling Client-side Propagation Calculation (without having to build it)
+### Enabling Propagation Calculation on client-side (without having to build it)
 
-If you want your clients (using your local server) to use the p533 modules for client side propagation calculation rather than the very rough estimates (which are based on band and time of day), run the following as the user who can write to your repository.
+From the local server to enable clients to use p533 modules for the client side propagation calculation rather than very rough estimates (which are based on band and time-of-day), then
+_(must have write access to repository)_
+run the following from the top-level distribution directory, then restart the server.
 
-```bash
-scripts/fetch-wasm.sh
+```txt
+node scripts/fetch-wasm.js
 ```
-
-from the top-level distribution directory, and restart the server.
 
 ---
 
@@ -147,6 +147,7 @@ from the top-level distribution directory, and restart the server.
 - [Updating](#updating)
 - [Architecture](#architecture)
 - [API Endpoints](#api-endpoints)
+- [Monitoring](#monitoring)
 - [Frequently Asked Questions](#frequently-asked-questions)
 - [Contributing](#contributing)
 - [Credits](#credits)
@@ -811,9 +812,9 @@ Layer preferences persist in localStorage.
 
 ## Languages
 
-The interface is available in 10 languages, selectable in Settings:
+The interface is available in 16 languages, selectable in Settings:
 
-🇬🇧 English · 🇫🇷 Français · 🇪🇸 Español · 🇩🇪 Deutsch · 🇳🇱 Nederlands · 🇧🇷 Português · 🇯🇵 日本語 · 🇰🇷 한국어 · 🇮🇹 Italiano · 🇸🇮 Slovenščina
+🇬🇧 English · 🇫🇷 Français · 🇪🇸 Español · 🇩🇪 Deutsch · 🇳🇱 Nederlands · 🇧🇷 Português · 🇯🇵 日本語 · 🇰🇷 한국어 · 🇮🇹 Italiano · 🇸🇮 Slovenščina · 🇲🇾 Melayu · 🇷🇺 Русский · 🇹🇭 ไทย · 🇨🇳 简体中文 · 🇬🇪 ქართული · 🇦🇩 Català
 
 Language files are in `src/lang/`. Each is a JSON file with translation keys. Contributions of new translations are welcome — just copy `en.json`, translate the values, and submit a PR.
 
@@ -965,14 +966,26 @@ Your `.env` file is never overwritten by updates, so your configuration is alway
 
 ## Deployment
 
+### Hardware Requirements
+
+OpenHamClock is a Node.js server plus a browser app — and it's the **browser side** that determines how smooth it feels. The server is light; rendering the map with many layers enabled is what works a machine.
+
+| Tier                    | Hardware                                   | Experience                                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Minimum**             | Raspberry Pi 3B+ / 1 GB RAM                | Works, but slow to paint with several map layers on. Best used in server-only mode (browse from a faster machine) or with **Low Memory Mode** enabled in Settings and a modest layer selection. |
+| **Recommended (kiosk)** | Raspberry Pi 4 (2 GB+) or Pi 5             | Smooth as a dedicated shack display, including the kiosk setup from `setup-pi.sh`. A Pi 5 handles everything comfortably, including the 3D globe.                                               |
+| **Desktop**             | Any x86-64 machine from the last ~10 years | Full experience. The 3D globe wants working GPU/WebGL acceleration; without it OpenHamClock falls back to the flat map automatically.                                                           |
+
+Tips for slower hardware: enable **Low Memory Mode** in Settings, run fewer map layers at once, and prefer the Flat projection over Azimuthal/3D. A Pi that only _serves_ OpenHamClock to browsers on other machines can be far more modest than one that also has to display it.
+
 ### Local / Desktop
 
-Works on Linux, macOS, and Windows. Requires Node.js 18+ (22 LTS recommended) and Git.
+Works on Linux, macOS, FreeBSD, and Windows. Requires Node.js 18+ (22 LTS recommended) and Git.
 
-**One-line install (Linux / macOS):**
+**One-line install (Linux / macOS / FreeBSD):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-linux.sh | bash
+curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup.sh | bash
 ```
 
 This clones the repo, installs dependencies, builds the frontend, creates a `.env` config file, and generates a `run.sh` launcher. After install, edit `~/openhamclock/.env` to set your `CALLSIGN` and `LOCATOR`, then start with `~/openhamclock/run.sh`.
@@ -980,7 +993,7 @@ This clones the repo, installs dependencies, builds the frontend, creates a `.en
 **Auto-start on boot (Linux with systemd — Ubuntu, Debian, Fedora, etc.):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-linux.sh | bash -s -- --service
+curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup.sh | bash -s -- --service
 ```
 
 This does everything above plus creates a `systemd` service that starts OpenHamClock automatically on boot. Manage it with:
@@ -993,12 +1006,22 @@ sudo journalctl -u openhamclock -f     # View logs
 
 > **macOS note:** macOS does not use systemd, so the `--service` flag is not supported. Use `~/openhamclock/run.sh` to start manually, or run `npm run electron` for a native desktop window.
 
-**Manual install (all platforms including Windows):**
+**Windows:**
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force
+iex (iwr https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-windows.ps1).Content
+```
+
+This clones the repo to `%USERPROFILE%\openhamclock`, installs dependencies, builds the frontend, creates a `start.bat` launcher, and adds a desktop shortcut. After install, edit `%USERPROFILE%\openhamclock\.env` to set your `CALLSIGN` and `LOCATOR`, then start with `start.bat` or `npm start`.
+
+**Manual install (all platforms):**
 
 ```bash
 git clone https://github.com/accius/openhamclock.git
 cd openhamclock
 npm install
+npm run build
 npm start
 ```
 
@@ -1100,11 +1123,21 @@ The DX Spider Proxy is a standalone microservice (in the `dxspider-proxy/` direc
 **Cluster nodes (tried in order of priority):**
 
 1. `dxspider.co.uk:7300` — Operated by Keith, G6NHU (primary, UK)
-2. `dxc.nc7j.com:7373` — NC7J
-3. `dxc.ai9t.com:7373` — AI9T
-4. `dxc.w6cua.org:7300` — W6CUA
+2. `dxc.ai9t.com:7373` — AI9T
 
 If the primary node is down, the proxy automatically tries the next one.
+
+> **Do not add `dxc.nc7j.com` (NC7J/NG7M) to any node list.** It runs ArcConnect, which
+> rejects SSID logins, and it was removed at the sysop's request. If you deployed your own
+> proxy from an older release, update it (or set a valid `CALLSIGN`) — pre-v26.4 proxies
+> default to the invalid login `OPENHAMCLOCK-56` and hammer nodes with `sh/dx` retries.
+
+**Remote kill switch:** both the app's cluster connections and the proxy consult
+`cluster-status.json` (fetched from this repo's Staging branch) before dialing any cluster
+node, and re-check every 15 minutes. If a release misbehaves against cluster nodes, flipping
+`"enabled": false` — or raising `"minAppVersion"` / `"minProxyVersion"` — remotely stops all
+up-to-date installs from dialing. The check fails open, so GitHub being unreachable never
+breaks cluster features. Override the flag URL with the `CLUSTER_STATUS_URL` env var.
 
 **SSID management:** Every DX Spider connection requires a unique callsign-SSID combination. OpenHamClock uses:
 
@@ -1154,7 +1187,7 @@ The relay agent has zero npm dependencies (uses only Node.js built-ins), batches
 
 ## Updating
 
-### Git installations (local/Pi)
+### Linux / macOS / Pi
 
 ```bash
 cd ~/openhamclock
@@ -1168,6 +1201,24 @@ sudo systemctl restart openhamclock
 # or
 ./restart.sh
 ```
+
+### Windows
+
+Run the bundled update script from your openhamclock directory:
+
+```powershell
+cd C:\Users\YourName\openhamclock
+Set-ExecutionPolicy Bypass -Scope Process -Force
+.\scripts\update.ps1
+```
+
+The script backs up your `.env` → pulls latest code → installs any new dependencies → rebuilds the frontend → restores your `.env`. Then restart:
+
+```powershell
+npm start
+```
+
+Or double-click `start.bat` if you created it during setup.
 
 ### Auto-update (Git installations)
 
@@ -1268,9 +1319,10 @@ openhamclock/
 ├── electron/                 # Electron desktop app wrapper (experimental)
 ├── scripts/                  # Setup and update scripts
 │   ├── setup-pi.sh               # Raspberry Pi one-line installer
-│   ├── setup-linux.sh            # Linux / macOS installer (--service for systemd)
+│   ├── setup.sh                  # Linux / macOS / FreeBSD installer (--service for systemd)
 │   ├── setup-windows.ps1         # Windows PowerShell installer
-│   └── update.sh                 # Update script (backup → pull → rebuild → restore)
+│   ├── update.ps1                # Windows update script (backup → pull → rebuild → restore)
+│   └── update.sh                 # Linux/Pi update script (backup → pull → rebuild → restore)
 ├── Dockerfile                # Multi-stage Docker build
 ├── docker-compose.yml        # Docker Compose configuration
 ├── railway.toml              # Railway deployment configuration
@@ -1346,6 +1398,11 @@ The backend exposes these REST endpoints. All data endpoints return JSON. Cache 
 | `GET /api/qrz/lookup/:callsign`   | QRZ.com callsign lookup                                                                        | —        |
 
 ---
+
+## Monitoring
+
+OpenHamClock exposes a prometheus compatible endpoint at `/metrics`.
+By default it is open without authentication, but you can always set the `METRICS_AUTH_KEY` env var which serves as bearer token authentication. See `.env.example` for details.
 
 ## Frequently Asked Questions
 

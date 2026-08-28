@@ -27,18 +27,33 @@ import { getAprsSymbolIcon } from '../utils/aprs-symbols.js';
 import { getAllLayers } from '../plugins/layerRegistry.js';
 import PluginLayer from './PluginLayer.jsx';
 import AzimuthalMap from './AzimuthalMap.jsx';
+// three.js is ~600 kB — load it only when the operator actually opens 3D mode.
+// React 18 permanently caches a rejected lazy() import, so a single failed
+// chunk load (stale HTML right after a redeploy is the classic case) would
+// otherwise make every later visit to 3D re-throw instantly until a hard
+// reload. On failure, discard the lazy instance so the next mount re-imports.
+const makeGlobe3DLazy = () =>
+  React.lazy(() =>
+    import('./Globe3D.jsx').catch((err) => {
+      Globe3D = makeGlobe3DLazy();
+      throw err;
+    }),
+  );
+let Globe3D = makeGlobe3DLazy();
 import { DXNewsTicker } from './DXNewsTicker.jsx';
 import { CallsignWeatherOverlay } from './CallsignWeatherOverlay.jsx';
 import { getCallsignWeather } from '../utils/callsignWeather.js';
 import { filterDXPaths } from '../utils';
+import { useCallsignPopup } from '../components/CallsignPopupManager.jsx';
+import { use630mBandEnabled } from '../hooks/use630mBandEnabled.js';
 
 // SECURITY: Escape HTML to prevent XSS in Leaflet popups/tooltips
 // DX cluster data, POTA/SOTA spots, and WSJT-X decodes come from external sources
 // and could contain malicious HTML/script tags in callsigns, comments, or park names.
 import { esc } from '../utils/escapeHtml.js';
 
-// Lightweight error boundary for the azimuthal map — falls back to Mercator
-// instead of crashing the entire dashboard.
+// Lightweight error boundary for the non-Leaflet projections (azimuthal canvas,
+// 3D globe) — falls back to Mercator instead of crashing the entire dashboard.
 class AzimuthalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -48,7 +63,7 @@ class AzimuthalErrorBoundary extends React.Component {
     return { hasError: true };
   }
   componentDidCatch(error, info) {
-    console.error('[AzimuthalMap] Render crash, falling back to Mercator:', error, info);
+    console.error(`[${this.props.label || 'AzimuthalMap'}] Render crash, falling back to Mercator:`, error, info);
     if (this.props.onFallback) this.props.onFallback();
   }
   render() {
@@ -147,6 +162,8 @@ export const WorldMap = ({
 }) => {
   const { t, i18n } = useTranslation();
   const mapLang = i18n.language?.split('-')[0] || 'en'; // e.g. 'de', 'ja', 'en'
+  const { showPopup } = useCallsignPopup();
+  const [band630mEnabled] = use630mBandEnabled();
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const tileLayerRef = useRef(null);
@@ -402,6 +419,11 @@ export const WorldMap = ({
     writeMapBandFilter([]);
   }, [writeMapBandFilter]);
 
+  useEffect(() => {
+    if (band630mEnabled || !selectedMapBands.has('630m')) return;
+    writeMapBandFilter(Array.from(selectedMapBands).filter((band) => band !== '630m'));
+  }, [band630mEnabled, selectedMapBands, writeMapBandFilter]);
+
   // Expose DE location to window for plugins (e.g., RBN)
   useEffect(() => {
     if (deLocation?.lat != null && deLocation?.lon != null) {
@@ -573,13 +595,151 @@ export const WorldMap = ({
 
   // Migration: saved isAzimuthal → split into projection + style
   // Also validate that saved mapStyle still exists in MAP_STYLES to prevent stale references
-  const migratedStyle = storedSettings.isAzimuthal ? 'dark' : storedSettings.mapStyle || 'dark';
+  // darkEsri/political were folded into dark/streets when CARTO tiles went
+  // key-only (#1162) — the aliases keep those saved configs on the same tiles.
+  const STYLE_ALIASES = { darkEsri: 'dark', political: 'streets' };
+  const savedStyle = STYLE_ALIASES[storedSettings.mapStyle] || storedSettings.mapStyle;
+  const migratedStyle = storedSettings.isAzimuthal ? 'dark' : savedStyle || 'dark';
   // Validate style exists and isn't the legacy 'azimuthal' canvas entry
   const initialStyle = MAP_STYLES[migratedStyle] && !MAP_STYLES[migratedStyle].legacy ? migratedStyle : 'dark';
   const initialProjection = storedSettings.isAzimuthal ? 'azimuthal' : storedSettings.mapProjection || 'mercator';
   const [mapStyle, setMapStyle] = useState(initialStyle);
+  const [mapRotationConfig, setMapRotationConfig] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ohc_main_map_rotator_v1') || '{}');
+      const allStyleIds = Object.keys(MAP_STYLES).filter((id) => MAP_STYLES[id] && !MAP_STYLES[id].legacy);
+      return {
+        enabled: saved.enabled === true,
+        intervalSeconds: Number(saved.intervalSeconds) || 60,
+        selectedIds: Array.isArray(saved.selectedIds) && saved.selectedIds.length ? saved.selectedIds : allStyleIds,
+      };
+    } catch {
+      const allStyleIds = Object.keys(MAP_STYLES).filter((id) => MAP_STYLES[id] && !MAP_STYLES[id].legacy);
+      return { enabled: false, intervalSeconds: 60, selectedIds: allStyleIds };
+    }
+  });
+  const [showMapRotationMenu, setShowMapRotationMenu] = useState(false);
+  const [mapRotationMenuActivity, setMapRotationMenuActivity] = useState(0);
   const [mapProjection, setMapProjection] = useState(initialProjection);
+  // The Leaflet path applies mode/continent/watchlist filters at render time;
+  // the globe consumes paths as data, so hand it the already-filtered list or
+  // those filters silently stop working in 3D.
+  const globeDxPaths = useMemo(
+    () =>
+      // filterDXPaths covers mode/continent/watchlist; the Leaflet path also
+      // drops entries with no dxCall at render time, so match that here.
+      filterDXPaths(dxPaths, dxFilters).filter((p) => String(p?.dxCall || '').trim()),
+    [dxPaths, dxFilters],
+  );
+  // Enabled plugin layers the globe cannot draw (everything Leaflet-bound
+  // except satellites, which 3D renders natively). Used for a visible note so
+  // toggling e.g. Lightning in Settings does not look like a silent no-op.
+  const suppressed2DLayers = useMemo(() => {
+    if (mapProjection !== 'globe3d') return [];
+    return getAllLayers().filter(
+      (l) => l.id !== 'satellites' && (pluginLayerStates[l.id]?.enabled ?? l.defaultEnabled),
+    );
+  }, [mapProjection, pluginLayerStates]);
+  // Set when a crash or chunk-load failure forces the session back to
+  // Mercator: the switch must not overwrite the user's saved projection.
+  // Cleared the next time they pick a projection themselves.
+  const projectionPersistBlockedRef = useRef(false);
   const isAzimuthal = mapProjection === 'azimuthal';
+  const isGlobe3D = mapProjection === 'globe3d';
+  // Both non-Leaflet projections hide the Mercator map and its dock.
+  const isLeafletHidden = isAzimuthal || isGlobe3D;
+
+  const availableBaseMapIds = useMemo(
+    () => Object.keys(MAP_STYLES).filter((id) => MAP_STYLES[id] && !MAP_STYLES[id].legacy),
+    [],
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ohc_main_map_rotator_v1', JSON.stringify(mapRotationConfig));
+    } catch {}
+  }, [mapRotationConfig]);
+
+  useEffect(() => {
+    if (!mapRotationConfig.enabled) return;
+    // Every style change makes the globe refetch its full tile set (up to 256
+    // tiles at retina zoom), and overlapping bursts get us throttled by the
+    // tile providers — throttled tiles are permanent holes in the texture.
+    // Rotation resumes when the user returns to a Leaflet projection.
+    if (isGlobe3D) return;
+
+    const selected = (mapRotationConfig.selectedIds || []).filter((id) => availableBaseMapIds.includes(id));
+    if (selected.length < 2) return;
+
+    const seconds = Math.max(5, Number(mapRotationConfig.intervalSeconds) || 60);
+
+    const timer = setInterval(() => {
+      setMapStyle((current) => {
+        const selectedNow = (mapRotationConfig.selectedIds || []).filter((id) => availableBaseMapIds.includes(id));
+        if (selectedNow.length < 2) return current;
+
+        const currentIndex = selectedNow.indexOf(current);
+        const nextStyle = selectedNow[(currentIndex + 1 + selectedNow.length) % selectedNow.length];
+
+        try {
+          const stored = JSON.parse(localStorage.getItem('openhamclock_mapSettings') || '{}');
+          // Only mapStyle belongs to the rotator. Writing mapProjection here
+          // would bypass projectionPersistBlockedRef and discard a saved 3D
+          // preference after a fallback — the save effect owns that key.
+          localStorage.setItem('openhamclock_mapSettings', JSON.stringify({ ...stored, mapStyle: nextStyle }));
+        } catch {}
+
+        return nextStyle;
+      });
+    }, seconds * 1000);
+
+    return () => clearInterval(timer);
+  }, [
+    mapRotationConfig.enabled,
+    mapRotationConfig.intervalSeconds,
+    mapRotationConfig.selectedIds,
+    availableBaseMapIds,
+    isGlobe3D,
+  ]);
+
+  const setMainMapRotation = useCallback((next) => {
+    setMapRotationConfig((prev) => ({ ...prev, ...next }));
+  }, []);
+
+  const toggleMainMapRotationStyle = useCallback(
+    (styleId) => {
+      setMapRotationConfig((prev) => {
+        const current = new Set(prev.selectedIds || []);
+
+        if (current.has(styleId)) current.delete(styleId);
+        else current.add(styleId);
+
+        const selectedIds = Array.from(current).filter((id) => availableBaseMapIds.includes(id));
+
+        return { ...prev, selectedIds };
+      });
+    },
+    [availableBaseMapIds],
+  );
+
+  const resetMapRotationMenuAutoClose = useCallback(() => {
+    setMapRotationMenuActivity((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!showMapRotationMenu) return;
+
+    const timer = setTimeout(() => {
+      setShowMapRotationMenu(false);
+    }, 25000);
+
+    return () => clearTimeout(timer);
+  }, [showMapRotationMenu, mapRotationMenuActivity]);
+
+  const mainMapRotationSelected = useMemo(
+    () => new Set((mapRotationConfig.selectedIds || []).filter((id) => availableBaseMapIds.includes(id))),
+    [mapRotationConfig.selectedIds, availableBaseMapIds],
+  );
   const [bandColorVersion, setBandColorVersion] = useState(0);
   const [editingBand, setEditingBand] = useState(null);
   const [editingColor, setEditingColor] = useState('#ff6666');
@@ -589,6 +749,10 @@ export const WorldMap = ({
   // loaded by the time this component mounts, we poll and flip this flag to retry.
   const [leafletReady, setLeafletReady] = useState(() => typeof window.L !== 'undefined');
   const effectiveBandColors = useMemo(() => getEffectiveBandColors(bandColorOverrides), [bandColorOverrides]);
+  const visibleBandLegendOrder = useMemo(
+    () => (band630mEnabled ? BAND_LEGEND_ORDER : BAND_LEGEND_ORDER.filter((band) => band !== '630m')),
+    [band630mEnabled],
+  );
 
   const getScaledZoomLevel = (inverseMultiplier) => {
     // Ensure the input stays within 1–100
@@ -732,7 +896,9 @@ export const WorldMap = ({
         JSON.stringify({
           ...existing,
           mapStyle,
-          mapProjection,
+          mapProjection: projectionPersistBlockedRef.current
+            ? (existing.mapProjection ?? mapProjection)
+            : mapProjection,
           center: mapView.center,
           zoom: mapView.zoom,
           wheelPxPerZoomLevel: getScaledZoomLevel(mouseZoom),
@@ -904,9 +1070,28 @@ export const WorldMap = ({
     });
     resizeObserver.observe(mapRef.current);
 
+    // Click handler for callsigns in map popups — delegated from map container.
+    // Catches clicks on [data-map-call] elements inside .leaflet-popup-content
+    // and shows the callsign info popup instead of opening a new tab.
+    const handlePopupCallsignClick = (e) => {
+      const popupContent = e.target.closest('.leaflet-popup-content');
+      if (!popupContent) return;
+      const el = e.target.closest('[data-map-call]');
+      if (!el) return;
+      e.stopPropagation();
+      const call = el.getAttribute('data-map-call');
+      if (!call) return;
+      const lat = el.getAttribute('data-loc-lat');
+      const lon = el.getAttribute('data-loc-lon');
+      const location = lat != null && lon != null ? { lat: parseFloat(lat), lon: parseFloat(lon) } : undefined;
+      showPopup(call, el, location);
+    };
+    mapRef.current.addEventListener('click', handlePopupCallsignClick);
+
     return () => {
       clearInterval(terminatorInterval);
       resizeObserver.disconnect();
+      mapRef.current?.removeEventListener('click', handlePopupCallsignClick);
       mapInstanceRef.current = null;
       try {
         map.remove();
@@ -1414,7 +1599,7 @@ export const WorldMap = ({
           });
 
           // Render circleMarker on all 3 world copies
-          const dxPopupHtml = `<b data-qrz-call="${esc(dxCall)}" style="color: ${color}; cursor:pointer">${esc(dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`;
+          const dxPopupHtml = `<b data-map-call="${esc(dxCall)}" data-loc-lat="${path.dxLat}" data-loc-lon="${path.dxLon}" style="color: ${color}" onmouseenter="this.style.color='var(--accent-white)';this.style.fontWeight='bold'" onmouseleave="this.style.color='${color}';this.style.fontWeight=''">${esc(dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-map-call="${esc(path.spotter)}" data-loc-lat="${path.spotterLat}" data-loc-lon="${path.spotterLon}">${esc(path.spotter)}</span>`;
           replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
             const dxCircle = L.circleMarker([lat, lon], {
               radius: isHovered ? 12 : 6,
@@ -1588,7 +1773,7 @@ export const WorldMap = ({
           const grid = spot.grid6 ? spot.grid6 : spot.grid ? spot.grid : null;
           const spotPopupHtml = `<span style="color:${mapDefaults.color};background:#000">
                     ${mapDefaults.shape} ${mapDefaults.name} - </span>
-                  <b data-qrz-call="${esc(spot.call)}" style="color:${mapDefaults.color}; cursor:pointer">${esc(spot.call)}</b><br/>
+                  <b data-map-call="${esc(spot.call)}" data-loc-lat="${spot.lat}" data-loc-lon="${spot.lon}" style="color:${mapDefaults.color}" onmouseenter="this.style.color='var(--accent-white)';this.style.fontWeight='bold'" onmouseleave="this.style.color='${mapDefaults.color}';this.style.fontWeight=''">${esc(spot.call)}</b><br/>
                   ${grid ? `${esc(grid)}<br/>` : ''}
                   <span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br/>
                   ${spot.name ? `<i>${esc(spot.name)}</i><br/>` : ''}${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>
@@ -1846,7 +2031,7 @@ export const WorldMap = ({
             // TX = circle marker, RX = diamond marker (colorblind-friendly shape distinction)
             // Mutual reception spots get a gold border ring
             const pskPopupHtml = `
-                <b data-qrz-call="${esc(displayCall)}" style="cursor:pointer">${esc(displayCall)}</b> <span style="color:#888;font-size:10px">${dirLabel}</span>${mutual ? ' <span style="color:#fbbf24" title="Mutual reception — QSO possible">★</span>' : ''}<br>
+                <b data-map-call="${esc(displayCall)}" data-loc-lat="${spotLat}" data-loc-lon="${spotLon}">${esc(displayCall)}</b> <span style="color:#888;font-size:10px">${dirLabel}</span>${mutual ? ' <span style="color:#fbbf24" title="Mutual reception — QSO possible">★</span>' : ''}<br>
                 ${esc(spot.mode)} @ ${esc(freqMHz)} MHz<br>
                 ${spot.snr !== null ? `SNR: ${spot.snr > 0 ? '+' : ''}${spot.snr} dB` : ''}
               `;
@@ -1986,7 +2171,7 @@ export const WorldMap = ({
 
             // Diamond-shaped marker — replicate across world copies
             const wsjtxPopupHtml = `
-                <b data-qrz-call="${esc(call)}" style="cursor:pointer">${esc(call)}</b> ${spot.type === 'CQ' ? 'CQ' : ''}<br>
+                <b data-map-call="${esc(call)}" data-loc-lat="${spotLat}" data-loc-lon="${spotLon}">${esc(call)}</b> ${spot.type === 'CQ' ? 'CQ' : ''}<br>
                 ${esc(spot.grid || '')} ${esc(spot.band || '')}${spot.gridSource === 'prefix' ? ' <i>(est)</i>' : spot.gridSource === 'cache' ? ' <i>(prev)</i>' : ''}<br>
                 ${esc(spot.mode || '')} SNR: ${spot.snr != null ? (spot.snr >= 0 ? '+' : '') + spot.snr : '?'} dB
               `;
@@ -2094,7 +2279,7 @@ export const WorldMap = ({
             marker
               .bindPopup(
                 `
-                <b data-qrz-call="${esc(station.call)}" style="cursor:pointer">${esc(station.ssid || station.call)}</b>
+                <b data-map-call="${esc(station.ssid || station.call)}" data-loc-lat="${station.lat}" data-loc-lon="${station.lon}">${esc(station.ssid || station.call)}</b>
                 ${isWatched ? ' <span style="color:#f59e0b">★</span>' : ''}
                 ${isRF ? ' <span style="color:#4ade80;font-size:10px">RF</span>' : ''}<br>
                 <span style="color:#888;font-size:11px">${ageStr}</span><br>
@@ -2185,7 +2370,7 @@ export const WorldMap = ({
 
             marker
               .bindPopup(
-                `<b style="color:var(--accent-cyan)">${esc(primaryCall(node.call))}</b><br>
+                `<b data-map-call="${esc(primaryCall(node.call))}" data-loc-lat="${node.lat}" data-loc-lon="${node.lon}" style="color:var(--accent-green);font-weight:bold" onmouseenter="this.style.color='var(--accent-white)';this.style.fontWeight='bold'" onmouseleave="this.style.color='var(--accent-green)';this.style.fontWeight='bold'">${esc(primaryCall(node.call))}</b><br>
                 <span style="color:var(--text-muted);font-size:11px">${t('meshcomPanel.mapPopupAge', { age: ageStr })}</span><br>
                 ${battLine}${altLine}${wxLine}
                 ${node.firmware ? `<span style="font-size:10px;color:var(--text-muted)">${t('meshcomPanel.mapPopupFirmware')} ${esc(node.firmware)}</span>` : ''}`,
@@ -2246,7 +2431,12 @@ export const WorldMap = ({
     <div style={{ position: 'relative', height: '100%', minHeight: '200px' }}>
       {/* Azimuthal equidistant projection (canvas-based) */}
       {isAzimuthal && (
-        <AzimuthalErrorBoundary onFallback={() => setMapProjection('mercator')}>
+        <AzimuthalErrorBoundary
+          onFallback={() => {
+            projectionPersistBlockedRef.current = true;
+            setMapProjection('mercator');
+          }}
+        >
           <AzimuthalMap
             leafletReady={leafletReady}
             deLocation={deLocation}
@@ -2284,6 +2474,74 @@ export const WorldMap = ({
         </AzimuthalErrorBoundary>
       )}
 
+      {/* 3D globe (three.js / WebGL) */}
+      {isGlobe3D && (
+        <AzimuthalErrorBoundary
+          label="Globe3D"
+          onFallback={() => {
+            projectionPersistBlockedRef.current = true;
+            setMapProjection('mercator');
+          }}
+        >
+          <React.Suspense
+            fallback={
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--text-secondary)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
+                  // Matches Globe3D's own backdrop so the handover is seamless.
+                  background:
+                    'radial-gradient(circle at 50% 45%, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0.12) 75%), var(--bg-panel)',
+                  borderRadius: '8px',
+                }}
+              >
+                Loading 3D engine…
+              </div>
+            }
+          >
+            <Globe3D
+              deLocation={deLocation}
+              dxLocation={dxLocation}
+              onDXChange={onDXChange}
+              dxLocked={dxLocked}
+              potaSpots={potaSpots}
+              wwffSpots={wwffSpots}
+              sotaSpots={sotaSpots}
+              wwbotaSpots={wwbotaSpots}
+              dxPaths={globeDxPaths}
+              mapBandFilter={mapBandFilter}
+              pskReporterSpots={pskReporterSpots}
+              wsjtxSpots={wsjtxSpots}
+              showDXPaths={showDXPaths}
+              showPOTA={showPOTA}
+              showWWFF={showWWFF}
+              showSOTA={showSOTA}
+              showWWBOTA={showWWBOTA}
+              showPSKReporter={showPSKReporter}
+              showWSJTX={showWSJTX}
+              onSpotClick={onSpotClick}
+              callsign={callsign}
+              showDeDxMarkers={showDeDxMarkers}
+              satellites={satellites}
+              satellitesEnabled={pluginLayerStates.satellites?.enabled ?? true}
+              suppressedLayers={suppressed2DLayers.map((l) => t(l.name))}
+              allUnits={allUnits}
+              config={config}
+              hideUi={mapUiHidden}
+              tileStyle={mapStyle}
+              lowMemoryMode={lowMemoryMode}
+              nightDarkness={nightDarkness}
+              onNightDarknessChange={setNightDarkness}
+            />
+          </React.Suspense>
+        </AzimuthalErrorBoundary>
+      )}
+
       <div
         ref={mapRef}
         style={{
@@ -2291,7 +2549,7 @@ export const WorldMap = ({
           width: '100%',
           borderRadius: '8px',
           background: mapStyle === 'countries' ? '#4a90d9' : undefined,
-          display: isAzimuthal ? 'none' : undefined,
+          display: isLeafletHidden ? 'none' : undefined,
         }}
       />
 
@@ -2299,47 +2557,51 @@ export const WorldMap = ({
       {/* Key includes projection so hooks fully remount when map instance changes.
           This resets internal refs (layerGroupRef, controlRef) that are bound to a
           specific Leaflet map — without this, layers stay on the hidden old map. */}
-      {getAllLayers().map((layerDef) => {
-        // Merge location config into satellite layer to keep config access consistent
-        const layerConfig = pluginLayerStates[layerDef.id]?.config ?? layerDef.config;
-        const finalConfig =
-          layerDef.id === 'satellites' && deLocation
-            ? {
-                ...layerConfig,
-                location: {
-                  lat: deLocation.lat,
-                  lon: deLocation.lon,
-                  stationAlt: parseInt(deLocation.stationAlt) || 100,
-                },
-                satellite: {
-                  minElev: config?.satellite?.minElev ?? layerConfig?.satellite?.minElev ?? 5,
-                },
-              }
-            : layerConfig;
+      {/* Plugin layers attach to a Leaflet map instance, so they cannot render on
+          the 3D globe — skip them entirely rather than binding to a hidden map.
+          The note below keeps that visible instead of silent. */}
+      {!isGlobe3D &&
+        getAllLayers().map((layerDef) => {
+          // Merge location config into satellite layer to keep config access consistent
+          const layerConfig = pluginLayerStates[layerDef.id]?.config ?? layerDef.config;
+          const finalConfig =
+            layerDef.id === 'satellites' && deLocation
+              ? {
+                  ...layerConfig,
+                  location: {
+                    lat: deLocation.lat,
+                    lon: deLocation.lon,
+                    stationAlt: parseInt(deLocation.stationAlt) || 100,
+                  },
+                  satellite: {
+                    minElev: config?.satellite?.minElev ?? layerConfig?.satellite?.minElev ?? 5,
+                  },
+                }
+              : layerConfig;
 
-        return (
-          <PluginLayer
-            key={`${layerDef.id}-${isAzimuthal ? 'az' : 'merc'}`}
-            plugin={layerDef}
-            enabled={pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled}
-            opacity={pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity}
-            onDXChange={onDXChange}
-            mapBandFilter={mapBandFilter}
-            config={finalConfig}
-            map={isAzimuthal ? azimuthalMapRef.current : mapInstanceRef.current}
-            satellites={satellites}
-            allUnits={allUnits}
-            callsign={callsign}
-            locator={deLocator}
-            deLat={deLocation?.lat ?? null}
-            deLon={deLocation?.lon ?? null}
-            lowMemoryMode={lowMemoryMode}
-          />
-        );
-      })}
+          return (
+            <PluginLayer
+              key={`${layerDef.id}-${isAzimuthal ? 'az' : 'merc'}`}
+              plugin={layerDef}
+              enabled={pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled}
+              opacity={pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity}
+              onDXChange={onDXChange}
+              mapBandFilter={mapBandFilter}
+              config={finalConfig}
+              map={isAzimuthal ? azimuthalMapRef.current : mapInstanceRef.current}
+              satellites={satellites}
+              allUnits={allUnits}
+              callsign={callsign}
+              locator={deLocator}
+              deLat={deLocation?.lat ?? null}
+              deLon={deLocation?.lon ?? null}
+              lowMemoryMode={lowMemoryMode}
+            />
+          );
+        })}
 
       {/* Unified map control dock */}
-      {!isAzimuthal && (
+      {!isLeafletHidden && (
         <div
           style={{
             position: 'absolute',
@@ -2501,7 +2763,7 @@ export const WorldMap = ({
         </div>
       )}
 
-      {mapStyle === 'MODIS' && !mapUiHidden && (
+      {mapStyle === 'MODIS' && !mapUiHidden && !isGlobe3D && (
         <div
           style={{
             position: 'absolute',
@@ -2559,15 +2821,35 @@ export const WorldMap = ({
               border: '1px solid #444',
               borderRadius: '4px',
               overflow: 'hidden',
+              position: 'relative',
             }}
           >
             {[
               { key: 'mercator', label: 'Flat' },
               { key: 'azimuthal', label: 'Azimuthal' },
+              { key: 'globe3d', label: '3D' },
             ].map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => setMapProjection(key)}
+                onClick={() => {
+                  const wasBlocked = projectionPersistBlockedRef.current;
+                  projectionPersistBlockedRef.current = false;
+                  setMapProjection(key);
+                  // Re-selecting the projection the session already fell back
+                  // to is a no-op state change, so the save effect never runs
+                  // and the cleared block would not persist. Write it here.
+                  if (wasBlocked && key === mapProjection) {
+                    try {
+                      const existing = getStoredMapSettings();
+                      localStorage.setItem(
+                        'openhamclock_mapSettings',
+                        JSON.stringify({ ...existing, mapProjection: key }),
+                      );
+                    } catch (e) {
+                      console.error('Failed to save map settings:', e);
+                    }
+                  }
+                }}
                 style={{
                   background: mapProjection === key ? '#00ffcc' : 'transparent',
                   color: mapProjection === key ? '#000' : '#888',
@@ -2586,9 +2868,18 @@ export const WorldMap = ({
 
           {/* Style dropdown */}
           <select
+            // The globe cannot build MODIS (its GIBS URL is generated
+            // dynamically by the 2D projections). The option stays present but
+            // disabled in 3D: aliasing the controlled value to 'dark' instead
+            // made picking Dark a no-op, since the DOM value never changed.
             value={mapStyle}
             id="mapStyle"
-            onChange={(e) => setMapStyle(e.target.value)}
+            onChange={(e) => {
+              setMapStyle(e.target.value);
+              if (mapRotationConfig.enabled) {
+                setMainMapRotation({ enabled: false });
+              }
+            }}
             style={{
               background: 'rgba(0, 0, 0, 0.8)',
               border: '1px solid #444',
@@ -2604,11 +2895,218 @@ export const WorldMap = ({
             {Object.entries(MAP_STYLES)
               .filter(([, style]) => !style.legacy)
               .map(([key, style]) => (
-                <option key={key} value={key}>
+                <option key={key} value={key} disabled={isGlobe3D && key === 'MODIS'}>
                   {style.name}
+                  {isGlobe3D && key === 'MODIS' ? ' (2D only)' : ''}
                 </option>
               ))}
           </select>
+          <button
+            type="button"
+            onClick={() => {
+              setShowMapRotationMenu((v) => {
+                const next = !v;
+                if (next) resetMapRotationMenuAutoClose();
+                return next;
+              });
+            }}
+            title="Map rotation controls"
+            aria-label="Map rotation controls"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '26px',
+              fontSize: '12px',
+              fontWeight: 700,
+              padding: '0',
+              borderRadius: '4px',
+              border: showMapRotationMenu ? '1px solid rgba(0, 255, 170, 0.95)' : '1px solid rgba(0, 255, 170, 0.35)',
+              background: showMapRotationMenu ? 'var(--accent-color)' : 'var(--bg-tertiary)',
+              color: 'var(--text-primary)',
+              textShadow: 'none',
+              boxShadow: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <svg
+              aria-hidden="true"
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <circle cx="9" cy="6" r="2" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <circle cx="15" cy="12" r="2" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+              <circle cx="11" cy="18" r="2" />
+            </svg>
+          </button>
+          {showMapRotationMenu && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '28px',
+                right: 0,
+                zIndex: 1200,
+                minWidth: '240px',
+                maxHeight: '330px',
+                overflowY: 'auto',
+                padding: '8px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+              }}
+              onMouseMove={resetMapRotationMenuAutoClose}
+              onClick={resetMapRotationMenuAutoClose}
+              onChange={resetMapRotationMenuAutoClose}
+              onKeyDown={resetMapRotationMenuAutoClose}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Map Rotation</div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  alignItems: 'center',
+                  marginBottom: '8px',
+                  paddingBottom: '8px',
+                  borderBottom: '1px solid var(--border-color)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setMainMapRotation({ enabled: !mapRotationConfig.enabled })}
+                  title={mapRotationConfig.enabled ? 'Turn map rotation off' : 'Turn map rotation on'}
+                  style={{
+                    fontSize: '11px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: mapRotationConfig.enabled ? 'var(--accent-color)' : 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    fontWeight: 700,
+                    textShadow: 'none',
+                    boxShadow: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {mapRotationConfig.enabled ? 'Rotation On' : 'Rotation Off'}
+                </button>
+
+                <select
+                  value={mapRotationConfig.intervalSeconds}
+                  onChange={(e) => setMainMapRotation({ intervalSeconds: Number(e.target.value) || 60 })}
+                  title="Main map rotation interval"
+                  disabled={!mapRotationConfig.enabled}
+                  style={{
+                    fontSize: '11px',
+                    padding: '3px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    cursor: mapRotationConfig.enabled ? 'pointer' : 'not-allowed',
+                    opacity: mapRotationConfig.enabled ? 1 : 0.8,
+                  }}
+                >
+                  <option value={15}>15s</option>
+                  <option value={30}>30s</option>
+                  <option value={60}>1m</option>
+                  <option value={120}>2m</option>
+                  <option value={300}>5m</option>
+                  <option value={600}>10m</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setMainMapRotation({ selectedIds: availableBaseMapIds })}
+                  style={{
+                    fontSize: '10px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--accent-color)',
+                    color: 'var(--text-primary)',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMainMapRotation({ selectedIds: [], enabled: false })}
+                  style={{
+                    fontSize: '10px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  None
+                </button>
+              </div>
+
+              <div style={{ fontSize: '10px', opacity: 0.9, marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                {mainMapRotationSelected.size} of {availableBaseMapIds.length} main maps selected for rotation.
+              </div>
+
+              <div
+                style={{
+                  maxHeight: '210px',
+                  overflowY: 'auto',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '4px',
+                  padding: '4px 6px',
+                  background: 'rgba(0,0,0,0.18)',
+                }}
+              >
+                {availableBaseMapIds.map((styleId) => (
+                  <label
+                    key={styleId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '11px',
+                      margin: '3px 0',
+                      cursor: 'pointer',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mainMapRotationSelected.has(styleId)}
+                      onChange={() => toggleMainMapRotationStyle(styleId)}
+                      style={{
+                        accentColor: 'var(--accent-color)',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    <span>
+                      {styleId === mapStyle ? '★ ' : ''}
+                      {MAP_STYLES[styleId]?.name || styleId}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2670,66 +3168,64 @@ export const WorldMap = ({
             flexWrap: 'nowrap',
           }}
         >
-          {showDXPaths && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ color: '#888' }}>Bands:</span>
-              <button
-                type="button"
-                onClick={() => clearMapBandFilter()}
-                title="Show all bands"
-                style={{
-                  background: hasMapBandFilter ? 'rgba(120,120,120,0.35)' : '#00ffcc',
-                  color: hasMapBandFilter ? '#ccc' : '#001f1a',
-                  padding: '2px 5px',
-                  borderRadius: '3px',
-                  fontWeight: '700',
-                  border: hasMapBandFilter ? '1px solid #666' : '1px solid rgba(0,0,0,0.35)',
-                  cursor: 'pointer',
-                  lineHeight: 1.1,
-                }}
-              >
-                ALL
-              </button>
-              {BAND_LEGEND_ORDER.map((band) => {
-                const bg = getBandColorForBand(band, effectiveBandColors);
-                const fg = getBandTextColor(bg);
-                const isEditing = editingBand === band;
-                const isSelected = selectedMapBands.has(normalizeBandKey(band));
-                const isDimmed = hasMapBandFilter && !isSelected;
-                return (
-                  <button
-                    key={band}
-                    type="button"
-                    onClick={(e) => {
-                      if (e.shiftKey) {
-                        openBandColorEditor(band);
-                        return;
-                      }
-                      toggleMapBand(band);
-                    }}
-                    title={`Click to filter ${band}; Shift+Click to edit color`}
-                    style={{
-                      background: bg,
-                      color: fg,
-                      padding: '2px 5px',
-                      borderRadius: '3px',
-                      fontWeight: '600',
-                      border: isEditing
-                        ? '2px solid #ffffff'
-                        : isSelected
-                          ? '1px solid #00ffcc'
-                          : '1px solid rgba(0,0,0,0.35)',
-                      cursor: 'pointer',
-                      lineHeight: 1.1,
-                      opacity: isDimmed ? 0.35 : 1,
-                    }}
-                  >
-                    {band}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ color: '#888' }}>Bands:</span>
+            <button
+              type="button"
+              onClick={() => clearMapBandFilter()}
+              title="Show all bands"
+              style={{
+                background: hasMapBandFilter ? 'rgba(120,120,120,0.35)' : '#00ffcc',
+                color: hasMapBandFilter ? '#ccc' : '#001f1a',
+                padding: '2px 5px',
+                borderRadius: '3px',
+                fontWeight: '700',
+                border: hasMapBandFilter ? '1px solid #666' : '1px solid rgba(0,0,0,0.35)',
+                cursor: 'pointer',
+                lineHeight: 1.1,
+              }}
+            >
+              ALL
+            </button>
+            {visibleBandLegendOrder.map((band) => {
+              const bg = getBandColorForBand(band, effectiveBandColors);
+              const fg = getBandTextColor(bg);
+              const isEditing = editingBand === band;
+              const isSelected = selectedMapBands.has(normalizeBandKey(band));
+              const isDimmed = hasMapBandFilter && !isSelected;
+              return (
+                <button
+                  key={band}
+                  type="button"
+                  onClick={(e) => {
+                    if (e.shiftKey) {
+                      openBandColorEditor(band);
+                      return;
+                    }
+                    toggleMapBand(band);
+                  }}
+                  title={`Click to filter ${band}; Shift+Click to edit color`}
+                  style={{
+                    background: bg,
+                    color: fg,
+                    padding: '2px 5px',
+                    borderRadius: '3px',
+                    fontWeight: '600',
+                    border: isEditing
+                      ? '2px solid #ffffff'
+                      : isSelected
+                        ? '1px solid #00ffcc'
+                        : '1px solid rgba(0,0,0,0.35)',
+                    cursor: 'pointer',
+                    lineHeight: 1.1,
+                    opacity: isDimmed ? 0.35 : 1,
+                  }}
+                >
+                  {band}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       {!hideOverlays && !mapUiHidden && showLegend && editingBand && (

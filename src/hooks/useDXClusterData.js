@@ -5,7 +5,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-import { applyDXFilters } from '../utils/dxClusterFilters';
+import { applyDXFilters, balanceSpotWindow, collapseDuplicateSpots } from '../utils/dxClusterFilters';
 import { useVisibilityRefresh } from './useVisibilityRefresh';
 import { apiFetch } from '../utils/apiFetch';
 
@@ -14,6 +14,7 @@ export const useDXClusterData = (filters = {}, config = {}) => {
   const [spots, setSpots] = useState([]); // For list display
   const [paths, setPaths] = useState([]); // For map display
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const lastFetchRef = useRef(0);
   const fetchRef = useRef(null);
 
@@ -52,7 +53,8 @@ export const useDXClusterData = (filters = {}, config = {}) => {
       }
     }
 
-    // Always send callsign for login (with SSID)
+    // Send the station callsign for login. Note: this is the bare call — the
+    // server prefers DX_CLUSTER_CALLSIGN from .env when set (#1128).
     if (config.callsign && config.callsign !== 'N0CALL') {
       params.append('callsign', config.callsign);
     }
@@ -75,6 +77,7 @@ export const useDXClusterData = (filters = {}, config = {}) => {
         if (response?.ok) {
           const newData = await response.json();
           const now = Date.now();
+          setError(null);
 
           setAllData((prev) => {
             // Create map of existing items by unique key
@@ -91,11 +94,34 @@ export const useDXClusterData = (filters = {}, config = {}) => {
               (item) => now - (item.timestamp || now) < effectiveRetentionMs,
             );
 
-            // Sort by timestamp (newest first) and limit
-            return validItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
+            // Sort by timestamp (newest first), collapse re-spots of the
+            // same station (accumulator keys include the spotter, so each
+            // extra spotter would otherwise show as a duplicate row), and
+            // cap. The accumulator is what mode filters draw from, so it
+            // holds an hour of history (600 spots) and evicts mode-balanced
+            // — a plain newest-N cap would let FT8/FT4 skimmer churn flush
+            // out the sparse SSB history within minutes. DXpedition-tagged
+            // spots are rare and exempt from the cap entirely.
+            const sorted = collapseDuplicateSpots(validItems.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+            const dxpeditions = sorted.filter((item) => item.isDXpedition);
+            const regular = balanceSpotWindow(
+              sorted.filter((item) => !item.isDXpedition),
+              config.lowMemoryMode ? 200 : 600,
+            );
+            return [...dxpeditions, ...regular].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
           });
 
           lastFetchRef.current = now;
+        } else if (response) {
+          // Config errors (e.g. custom cluster without a valid callsign) come
+          // back as 400s with a useful message — surface it instead of an
+          // eternally empty panel.
+          let message = `DX cluster error (HTTP ${response.status})`;
+          try {
+            const body = await response.json();
+            if (body?.error) message = body.error;
+          } catch {}
+          setError(message);
         }
       } catch (err) {
         console.error('DX cluster data error:', err);
@@ -168,6 +194,7 @@ export const useDXClusterData = (filters = {}, config = {}) => {
     spots, // For DXClusterPanel list
     paths, // For WorldMap
     loading,
+    error,
     totalSpots: allData.length,
     clearSpots,
   };
